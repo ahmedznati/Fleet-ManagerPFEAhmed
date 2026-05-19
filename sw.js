@@ -1,13 +1,16 @@
 // FleetGuard Service Worker for PWA
 const CACHE_NAME = 'fleetguard-v1';
-const urlsToCache = [
-  '/Fleet-Manager/',
-  '/Fleet-Manager/index.html',
-  '/Fleet-Manager/manifest.json'
-];
 
 // Install event
 self.addEventListener('install', (event) => {
+  // Derive cached URLs from the registration scope so this file works
+  // regardless of the GitHub Pages repo name / base path.
+  const scope = self.registration.scope;
+  const urlsToCache = [
+    scope,
+    scope + 'index.html',
+    scope + 'manifest.json'
+  ];
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
