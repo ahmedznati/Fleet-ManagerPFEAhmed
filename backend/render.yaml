@@ -10,7 +10,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: FRONTEND_URL
-        value: https://raniakhedri.github.io/Fleet-Manager/
+        value: https://ahmedznati.github.io/Fleet-ManagerPFEAhmed/
       - key: DATABASE_URL
         value: postgresql://fleet_db_cw9z_user:oy7OZJncHDq5dirgwm5jmOgOIWhTPHcT@dpg-d5qnaqvgi27c73fggkr0-a/fleet_db_cw9z?sslmode=require
       - key: JWT_SECRET

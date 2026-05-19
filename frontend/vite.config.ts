@@ -3,7 +3,11 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 
 export default defineConfig({
-  base: process.env.NODE_ENV === 'production' ? '/Fleet-Manager/' : '/',
+  // Base path is driven by VITE_BASE_PATH env var so any GitHub Pages repo name works
+  // without touching source code — just set VITE_BASE_PATH in CI / .env.production.local
+  base: process.env.NODE_ENV === 'production'
+    ? (process.env.VITE_BASE_PATH || '/Fleet-ManagerPFEAhmed/')
+    : '/',
   plugins: [
     react(),
   ],

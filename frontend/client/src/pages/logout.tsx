@@ -12,7 +12,7 @@ export default function LogoutPage() {
     
     // Redirect to login
       setTimeout(() => {
-        const base = import.meta.env.PROD ? "/Fleet-Manager" : "";
+        const base = import.meta.env.PROD ? import.meta.env.BASE_URL.replace(/\/$/, '') : "";
         window.location.href = `${base}/login`;
     }, 500);
   }, [setLocation]);

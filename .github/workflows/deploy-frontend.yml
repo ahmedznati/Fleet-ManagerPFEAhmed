@@ -41,6 +41,9 @@ jobs:
         working-directory: frontend
         env:
           NODE_ENV: production
+          # Change VITE_BASE_PATH here (or set it as a GitHub repo variable) to
+          # redeploy to a different GitHub Pages URL without touching source code.
+          VITE_BASE_PATH: /Fleet-ManagerPFEAhmed/
         run: npm run build
 
       - name: Deploy to GitHub Pages

@@ -30,7 +30,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    const base = import.meta.env.PROD ? "/Fleet-Manager" : "";
+    const base = import.meta.env.PROD ? import.meta.env.BASE_URL.replace(/\/$/, '') : "";
     window.location.href = `${base}/login`;
   };
 
