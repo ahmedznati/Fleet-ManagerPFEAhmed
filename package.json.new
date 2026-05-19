@@ -1,0 +1,18 @@
+{
+  "name": "fleet-manager",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "Fleet management system with separate backend and frontend",
+  "scripts": {
+    "dev": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "start": "node ./backend/dist/index.cjs",
+    "backend": "npm --prefix backend run dev",
+    "frontend": "npm --prefix frontend run dev",
+    "db:push": "npm --prefix backend run db:push"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

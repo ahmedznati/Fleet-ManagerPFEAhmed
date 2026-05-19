@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: fleet-manager-backend
+    runtime: node
+    nodeVersion: "20"
+    region: oregon
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_URL
+        value: https://raniakhedri.github.io/Fleet-Manager/
+      - key: DATABASE_URL
+        value: postgresql://fleet_db_cw9z_user:oy7OZJncHDq5dirgwm5jmOgOIWhTPHcT@dpg-d5qnaqvgi27c73fggkr0-a/fleet_db_cw9z?sslmode=require
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: PORT
+        value: 10000
+      - key: BREVO_API_KEY
+        sync: false  # Set manually in Render dashboard
+      - key: BREVO_SENDER_EMAIL
+        sync: false  # Set manually in Render dashboard
+      - key: BREVO_SENDER_NAME
+        value: FleetGuard

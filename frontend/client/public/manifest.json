@@ -1,0 +1,26 @@
+{
+  "name": "FleetGuard - Gestion de Flotte Militaire",
+  "short_name": "FleetGuard",
+  "description": "Application de gestion de flotte militaire avec suivi GPS en temps réel",
+  "start_url": "/Fleet-Manager/",
+  "display": "standalone",
+  "background_color": "#f5f0dc",
+  "theme_color": "#c41e3a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "emblem.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "emblem.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "fr-FR"
+}

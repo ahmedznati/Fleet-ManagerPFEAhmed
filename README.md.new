@@ -1,0 +1,73 @@
+# Fleet Manager - Development Setup
+
+## Project Structure
+
+```
+fleet-manager/
+├── backend/              # Express.js API server
+│   ├── server/          # Source code
+│   ├── shared/          # Shared types & schemas
+│   ├── package.json
+│   └── .env
+├── frontend/            # React Vite app
+│   ├── client/          # Source code
+│   ├── package.json
+│   └── .env
+├── .env.backend         # Backend config template
+├── .env.frontend        # Frontend config template
+└── package.json         # Root orchestrator
+```
+
+## Quick Start
+
+### 1. Install dependencies (root level)
+```bash
+npm install
+```
+
+### 2. Set up environment files
+Copy templates and update with your settings:
+```bash
+cp .env.backend backend/.env
+cp .env.frontend frontend/.env
+```
+
+### 3. Run both backend and frontend
+```bash
+npm run dev
+```
+
+This starts:
+- **Backend**: http://localhost:3000
+- **Frontend**: http://localhost:5173
+
+### Alternative: Run separately
+
+**Backend only:**
+```bash
+npm run backend
+```
+
+**Frontend only:**
+```bash
+npm run frontend
+```
+
+## Database Setup
+
+Run migrations:
+```bash
+npm run db:push
+```
+
+## Login Credentials
+
+- **Admin**: rania@admin.com / raniakhedri
+- **User**: ahmed@user.com / ahmedznati
+
+## Build for Production
+
+```bash
+npm run build
+npm start
+```
