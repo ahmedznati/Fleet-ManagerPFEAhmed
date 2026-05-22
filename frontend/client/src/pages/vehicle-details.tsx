@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useRoute } from "wouter";
 import { useVehicle, useVehicleHistory } from "@/hooks/use-vehicles";
 import { useMissions } from "@/hooks/use-missions";
@@ -7,10 +8,11 @@ import { MapView } from "@/components/map-view";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Clock, Gauge, Navigation, MapPin, User, Users, Calendar, AlertCircle, CheckCircle2, XCircle, Timer } from "lucide-react";
 import { Link } from "wouter";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow, intervalToDuration, formatDuration } from "date-fns";
 import { fr } from "date-fns/locale";
 
 export default function VehicleDetailsPage() {
@@ -26,24 +28,35 @@ export default function VehicleDetailsPage() {
     .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
   const activeMission = vehicleMissions.find((m: any) => m.status === "in_progress");
-  const recentMissions = vehicleMissions.filter((m: any) => m.status !== "in_progress").slice(0, 5);
 
-  // Show GPS history only for the most recent mission's time window
-  const lastMission = activeMission || vehicleMissions[0];
-  const missionHistory = lastMission
+  // Selected mission for the map (defaults to active, then most recent)
+  const [selectedMissionId, setSelectedMissionId] = useState<number | null>(null);
+  const selectedMission =
+    vehicleMissions.find((m: any) => m.id === selectedMissionId)
+    ?? activeMission
+    ?? vehicleMissions[0]
+    ?? null;
+
+  // Filter GPS history to the selected mission's time window
+  const missionHistory = selectedMission
     ? (history || []).filter((loc: any) => {
         const t = new Date(loc.timestamp || loc.createdAt || 0).getTime();
-        const start = lastMission.actualStart
-          ? new Date(lastMission.actualStart).getTime()
-          : lastMission.scheduledStart
-          ? new Date(lastMission.scheduledStart).getTime()
+        const start = selectedMission.actualStart
+          ? new Date(selectedMission.actualStart).getTime()
+          : selectedMission.scheduledStart
+          ? new Date(selectedMission.scheduledStart).getTime()
           : 0;
-        const end = lastMission.actualEnd
-          ? new Date(lastMission.actualEnd).getTime()
+        const end = selectedMission.actualEnd
+          ? new Date(selectedMission.actualEnd).getTime()
           : Date.now();
         return t >= start && t <= end;
       })
     : (history || []);
+
+  const formatMissionDuration = (ms: number) => {
+    const d = intervalToDuration({ start: 0, end: ms });
+    return formatDuration(d, { format: ["hours", "minutes"], locale: fr }) || "< 1 min";
+  };
 
   const driverMap = new Map((drivers || []).map((d: any) => [d.id, `${d.firstName} ${d.lastName}`]));
 
@@ -118,8 +131,8 @@ export default function VehicleDetailsPage() {
             <CardHeader className="border-b bg-white z-10 relative">
               <CardTitle>
                 Historique de route
-                {lastMission && (
-                  <span className="text-sm font-normal text-slate-500 ml-2">— {lastMission.title}</span>
+                {selectedMission && (
+                  <span className="text-sm font-normal text-slate-500 ml-2">— {selectedMission.title}</span>
                 )}
               </CardTitle>
             </CardHeader>
@@ -128,7 +141,7 @@ export default function VehicleDetailsPage() {
                  vehicles={[vehicle]} 
                  height="100%" 
                  history={missionHistory}
-                 missions={lastMission ? [lastMission] : []}
+                 missions={selectedMission ? [selectedMission] : []}
                />
             </div>
           </Card>
@@ -238,48 +251,79 @@ export default function VehicleDetailsPage() {
             </CardContent>
           </Card>
 
-          {/* Recent missions */}
+          {/* Mission selector — click to view on map */}
           <Card className="border-none shadow-md">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
                 <AlertCircle className="w-4 h-4 text-slate-400" />
-                Missions récentes
+                Missions ({vehicleMissions.length})
               </CardTitle>
+              <p className="text-xs text-slate-400">Cliquez pour voir le trajet sur la carte</p>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               {vehicleMissions.length === 0 ? (
-                <p className="text-sm text-slate-400 text-center py-4">Aucune mission pour ce véhicule.</p>
+                <p className="text-sm text-slate-400 text-center py-6">Aucune mission pour ce véhicule.</p>
               ) : (
-                <div className="space-y-3">
-                  {recentMissions.map((m: any) => (
-                    <div key={m.id} className="border border-slate-100 rounded-lg p-3 space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-medium text-sm text-slate-900 truncate">{m.title}</p>
-                        {getMissionStatusBadge(m.status)}
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-slate-500">
-                        <MapPin className="w-3 h-3 text-red-400" />
-                        <span className="truncate">{m.endLocation}</span>
-                      </div>
-                      {m.driverId && (
-                        <div className="flex items-center gap-1 text-xs text-slate-400">
-                          <User className="w-3 h-3" />
-                          {driverMap.get(m.driverId) || `Chauffeur #${m.driverId}`}
-                        </div>
-                      )}
-                      {m.scheduledStart && (
-                        <p className="text-[10px] text-slate-400">
-                          {format(new Date(m.scheduledStart), "d MMM yyyy, HH:mm", { locale: fr })}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                  {vehicleMissions.length > recentMissions.length + (activeMission ? 1 : 0) && (
-                    <p className="text-xs text-slate-400 text-center pt-1">
-                      + {vehicleMissions.length - recentMissions.length - (activeMission ? 1 : 0)} mission(s) plus anciennes
-                    </p>
-                  )}
-                </div>
+                <ScrollArea className="max-h-80">
+                  <div className="divide-y divide-slate-100">
+                    {vehicleMissions.map((m: any) => {
+                      const isSelected = selectedMission?.id === m.id;
+                      const durationMs =
+                        m.actualStart && m.actualEnd
+                          ? new Date(m.actualEnd).getTime() - new Date(m.actualStart).getTime()
+                          : null;
+                      return (
+                        <button
+                          key={m.id}
+                          className={`w-full text-left px-4 py-3 transition-colors hover:bg-slate-50 ${
+                            isSelected ? "bg-blue-50 border-l-4 border-blue-500" : "border-l-4 border-transparent"
+                          }`}
+                          onClick={() => setSelectedMissionId(m.id)}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <p className={`font-medium text-sm truncate ${isSelected ? "text-blue-700" : "text-slate-900"}`}>
+                              {m.title}
+                            </p>
+                            {getMissionStatusBadge(m.status)}
+                          </div>
+
+                          {/* A → B route summary */}
+                          <div className="flex items-center gap-1 text-xs text-slate-500 mb-1">
+                            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500 text-white text-[9px] font-bold shrink-0">A</span>
+                            <span className="truncate">{m.startLat ? `${Number(m.startLat).toFixed(4)}, ${Number(m.startLng).toFixed(4)}` : "Départ GPS"}</span>
+                            <span className="mx-0.5 text-slate-300">→</span>
+                            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold shrink-0">B</span>
+                            <span className="truncate">{m.endLocation}</span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-slate-400">
+                            {m.driverId && (
+                              <span className="flex items-center gap-1">
+                                <User className="w-3 h-3" />
+                                {driverMap.get(m.driverId) || `#${m.driverId}`}
+                              </span>
+                            )}
+                            {m.actualStart && (
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                {format(new Date(m.actualStart), "d MMM yyyy HH:mm", { locale: fr })}
+                              </span>
+                            )}
+                            {durationMs !== null && (
+                              <span className="flex items-center gap-1">
+                                <Timer className="w-3 h-3" />
+                                {formatMissionDuration(durationMs)}
+                              </span>
+                            )}
+                            {m.distance && (
+                              <span>{Number(m.distance).toFixed(1)} km</span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
               )}
             </CardContent>
           </Card>
