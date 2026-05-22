@@ -67,8 +67,18 @@ function interpolatePath(pts: [number, number][], steps = 24): [number, number][
   return result;
 }
 
-// Flies to the selected vehicle whenever selectedVehicleId changes
-function MapController({ vehicles, selectedVehicleId }: { vehicles: any[]; selectedVehicleId?: number }) {
+// Flies to selected vehicle; fits map to history when fitKey changes
+function MapController({
+  vehicles,
+  selectedVehicleId,
+  historyPoints,
+  fitKey,
+}: {
+  vehicles: any[];
+  selectedVehicleId?: number;
+  historyPoints?: [number, number][];
+  fitKey?: string | number;
+}) {
   const map = useMap();
 
   // Fix Leaflet sizing when the container gets its height after React render
@@ -85,6 +95,15 @@ function MapController({ vehicles, selectedVehicleId }: { vehicles: any[]; selec
     }
   }, [selectedVehicleId, map, vehicles]);
 
+  // Re-fit map to history bounds whenever the selected mission changes
+  useEffect(() => {
+    if (!historyPoints || historyPoints.length === 0) return;
+    try {
+      map.fitBounds(historyPoints as any, { padding: [60, 60], maxZoom: 16, animate: true });
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitKey, map]);
+
   return null;
 }
 
@@ -97,6 +116,9 @@ interface MapViewProps {
 }
 
 export function MapView({ vehicles = [], selectedVehicleId, height = "500px", history = [], missions = [] }: MapViewProps) {
+  // Reverse so index 0 = oldest (departure A) and last = newest — backend returns DESC
+  const orderedHistory = [...history].reverse();
+
   // Default center or center on first vehicle with GPS
   const firstWithGps = vehicles.find((v) => v.lat && v.lng);
   const center = firstWithGps
@@ -120,7 +142,12 @@ export function MapView({ vehicles = [], selectedVehicleId, height = "500px", hi
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         />
 
-        <MapController vehicles={vehicles} selectedVehicleId={selectedVehicleId} />
+        <MapController
+          vehicles={vehicles}
+          selectedVehicleId={selectedVehicleId}
+          historyPoints={orderedHistory.map(loc => [loc.lat, loc.lng] as [number, number])}
+          fitKey={orderedHistory.length > 0 ? `${orderedHistory[0].id}_${orderedHistory.length}` : undefined}
+        />
 
         {vehicles.map((vehicle) => (
           vehicle.lat && vehicle.lng && (
@@ -191,7 +218,7 @@ export function MapView({ vehicles = [], selectedVehicleId, height = "500px", hi
         {/* Mission start (A) and destination (B) markers */}
         {missions.map((mission: any) => (
           <span key={`mission-markers-${mission.id}`}>
-            {/* A: use startLat/startLng if available, else fall back to first history point */}
+            {/* A: use startLat/startLng if available, else fall back to oldest history point (departure) */}
             {(mission.startLat && mission.startLng) ? (
               <Marker position={[mission.startLat, mission.startLng]} icon={missionStartIcon}>
                 <Popup>
@@ -201,8 +228,8 @@ export function MapView({ vehicles = [], selectedVehicleId, height = "500px", hi
                   </div>
                 </Popup>
               </Marker>
-            ) : history.length > 0 && (
-              <Marker position={[history[0].lat, history[0].lng]} icon={missionStartIcon}>
+            ) : orderedHistory.length > 0 && (
+              <Marker position={[orderedHistory[0].lat, orderedHistory[0].lng]} icon={missionStartIcon}>
                 <Popup>
                   <div className="text-sm space-y-1">
                     <p className="font-semibold text-emerald-700">Départ enregistré</p>
@@ -224,16 +251,16 @@ export function MapView({ vehicles = [], selectedVehicleId, height = "500px", hi
           </span>
         ))}
 
-        {history.length > 0 && (
+        {orderedHistory.length > 0 && (
           <>
             {/* Smooth curved path via Catmull-Rom spline */}
             <Polyline
-              positions={interpolatePath(history.map(loc => [loc.lat, loc.lng] as [number, number]))}
+              positions={interpolatePath(orderedHistory.map(loc => [loc.lat, loc.lng] as [number, number]))}
               pathOptions={{ color: '#3b82f6', weight: 4, opacity: 0.8 }}
             />
             {/* Intermediate waypoints only (skip first and last — covered by A/B markers) */}
-            {history.map((loc, idx) => (
-              idx > 0 && idx < history.length - 1 && (
+            {orderedHistory.map((loc, idx) => (
+              idx > 0 && idx < orderedHistory.length - 1 && (
                 <CircleMarker
                   key={idx}
                   center={[loc.lat, loc.lng]}
