@@ -8,9 +8,8 @@ import { MapView } from "@/components/map-view";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Clock, Gauge, Navigation, MapPin, User, Users, Calendar, AlertCircle, CheckCircle2, XCircle, Timer } from "lucide-react";
+import { ArrowLeft, Clock, Gauge, Navigation, MapPin, User, Users, Calendar, AlertCircle, CheckCircle2, XCircle, Timer, ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "wouter";
 import { format, formatDistanceToNow, intervalToDuration, formatDuration } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -31,6 +30,8 @@ export default function VehicleDetailsPage() {
 
   // Selected mission for the map (defaults to active, then most recent)
   const [selectedMissionId, setSelectedMissionId] = useState<number | null>(null);
+  const [missionPage, setMissionPage] = useState(0);
+  const MISSIONS_PER_PAGE = 3;
   const selectedMission =
     vehicleMissions.find((m: any) => m.id === selectedMissionId)
     ?? activeMission
@@ -264,9 +265,9 @@ export default function VehicleDetailsPage() {
               {vehicleMissions.length === 0 ? (
                 <p className="text-sm text-slate-400 text-center py-6">Aucune mission pour ce véhicule.</p>
               ) : (
-                <ScrollArea className="max-h-80">
+                <>
                   <div className="divide-y divide-slate-100">
-                    {vehicleMissions.map((m: any) => {
+                    {vehicleMissions.slice(missionPage * MISSIONS_PER_PAGE, (missionPage + 1) * MISSIONS_PER_PAGE).map((m: any) => {
                       const isSelected = selectedMission?.id === m.id;
                       const durationMs =
                         m.actualStart && m.actualEnd
@@ -323,7 +324,34 @@ export default function VehicleDetailsPage() {
                       );
                     })}
                   </div>
-                </ScrollArea>
+                  {vehicleMissions.length > MISSIONS_PER_PAGE && (
+                    <div className="flex items-center justify-between px-4 py-2 border-t border-slate-100">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        disabled={missionPage === 0}
+                        onClick={() => setMissionPage(p => p - 1)}
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5 mr-1" />
+                        Précédent
+                      </Button>
+                      <span className="text-xs text-slate-400">
+                        {missionPage + 1} / {Math.ceil(vehicleMissions.length / MISSIONS_PER_PAGE)}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        disabled={(missionPage + 1) * MISSIONS_PER_PAGE >= vehicleMissions.length}
+                        onClick={() => setMissionPage(p => p + 1)}
+                      >
+                        Suivant
+                        <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
