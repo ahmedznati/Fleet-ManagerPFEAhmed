@@ -1,20 +1,49 @@
 import { useRoute } from "wouter";
 import { useVehicle, useVehicleHistory } from "@/hooks/use-vehicles";
+import { useMissions } from "@/hooks/use-missions";
+import { useDrivers } from "@/hooks/use-drivers";
 import Layout from "@/components/layout";
 import { MapView } from "@/components/map-view";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Clock, Gauge, Navigation } from "lucide-react";
+import { ArrowLeft, Clock, Gauge, Navigation, MapPin, User, Users, Calendar, AlertCircle, CheckCircle2, XCircle, Timer } from "lucide-react";
 import { Link } from "wouter";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
+import { fr } from "date-fns/locale";
 
 export default function VehicleDetailsPage() {
   const [, params] = useRoute("/vehicles/:id");
   const id = parseInt(params?.id || "0");
   const { data: vehicle, isLoading } = useVehicle(id);
   const { data: history, isLoading: isHistoryLoading } = useVehicleHistory(id);
+  const { data: allMissions } = useMissions();
+  const { data: drivers } = useDrivers();
+
+  const vehicleMissions = (allMissions || [])
+    .filter((m: any) => m.vehicleId === id)
+    .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+  const activeMission = vehicleMissions.find((m: any) => m.status === "in_progress");
+  const recentMissions = vehicleMissions.filter((m: any) => m.status !== "in_progress").slice(0, 5);
+
+  const driverMap = new Map((drivers || []).map((d: any) => [d.id, `${d.firstName} ${d.lastName}`]));
+
+  const getMissionStatusBadge = (status: string) => {
+    const map: Record<string, { label: string; className: string; icon: any }> = {
+      pending:     { label: "En attente",  className: "bg-amber-100 text-amber-700",   icon: <Clock className="w-3 h-3" /> },
+      in_progress: { label: "En cours",    className: "bg-blue-100 text-blue-700",     icon: <AlertCircle className="w-3 h-3" /> },
+      completed:   { label: "Terminée",    className: "bg-emerald-100 text-emerald-700", icon: <CheckCircle2 className="w-3 h-3" /> },
+      cancelled:   { label: "Annulée",     className: "bg-red-100 text-red-600",       icon: <XCircle className="w-3 h-3" /> },
+    };
+    const s = map[status] || { label: status, className: "bg-slate-100 text-slate-600", icon: null };
+    return (
+      <Badge className={`border-0 gap-1 ${s.className}`}>
+        {s.icon}{s.label}
+      </Badge>
+    );
+  };
 
   if (isLoading) {
     return (
@@ -84,6 +113,65 @@ export default function VehicleDetailsPage() {
 
         {/* Sidebar Stats */}
         <div className="space-y-6">
+          {/* Active mission — shown prominently */}
+          {activeMission && (
+            <Card className="border-2 border-blue-400 shadow-md bg-blue-50">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2 text-blue-800">
+                  <AlertCircle className="w-4 h-4 animate-pulse" />
+                  Mission en cours
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <p className="font-semibold text-slate-900 text-base">{activeMission.title}</p>
+                {activeMission.description && (
+                  <p className="text-slate-600 text-xs">{activeMission.description}</p>
+                )}
+                <div className="flex items-start gap-2 text-slate-700">
+                  <MapPin className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                  <span>{activeMission.endLocation}</span>
+                </div>
+                {activeMission.driverId && (
+                  <div className="flex items-center gap-2 text-slate-600">
+                    <User className="w-4 h-4 text-slate-400" />
+                    <span>{driverMap.get(activeMission.driverId) || `Chauffeur #${activeMission.driverId}`}</span>
+                  </div>
+                )}
+                {activeMission.coPilot && (
+                  <div className="flex items-center gap-2 text-slate-600">
+                    <Users className="w-4 h-4 text-slate-400" />
+                    <span>Co-pilote : {activeMission.coPilot}</span>
+                  </div>
+                )}
+                {activeMission.passengersCount && (
+                  <div className="flex items-center gap-2 text-slate-600">
+                    <Users className="w-4 h-4 text-slate-400" />
+                    <span>{activeMission.passengersCount} passager{activeMission.passengersCount > 1 ? "s" : ""}</span>
+                  </div>
+                )}
+                {activeMission.scheduledStart && (
+                  <div className="flex items-center gap-2 text-slate-600">
+                    <Calendar className="w-4 h-4 text-slate-400" />
+                    <span>Prévu : {format(new Date(activeMission.scheduledStart), "PPp", { locale: fr })}</span>
+                  </div>
+                )}
+                {activeMission.actualStart && (
+                  <div className="flex items-center gap-2 text-blue-700 font-medium">
+                    <Timer className="w-4 h-4" />
+                    <span>
+                      Démarrée il y a {formatDistanceToNow(new Date(activeMission.actualStart), { locale: fr })}
+                    </span>
+                  </div>
+                )}
+                {activeMission.priority && activeMission.priority !== "normal" && (
+                  <Badge className={`text-xs border-0 ${activeMission.priority === "urgent" ? "bg-red-100 text-red-700" : activeMission.priority === "high" ? "bg-orange-100 text-orange-700" : "bg-slate-100 text-slate-600"}`}>
+                    {activeMission.priority === "urgent" ? "Urgente" : activeMission.priority === "high" ? "Haute" : activeMission.priority}
+                  </Badge>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="border-none shadow-md">
             <CardHeader>
               <CardTitle>Current Status</CardTitle>
@@ -124,6 +212,52 @@ export default function VehicleDetailsPage() {
                   </p>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Recent missions */}
+          <Card className="border-none shadow-md">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-slate-400" />
+                Missions récentes
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {vehicleMissions.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">Aucune mission pour ce véhicule.</p>
+              ) : (
+                <div className="space-y-3">
+                  {recentMissions.map((m: any) => (
+                    <div key={m.id} className="border border-slate-100 rounded-lg p-3 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-medium text-sm text-slate-900 truncate">{m.title}</p>
+                        {getMissionStatusBadge(m.status)}
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-slate-500">
+                        <MapPin className="w-3 h-3 text-red-400" />
+                        <span className="truncate">{m.endLocation}</span>
+                      </div>
+                      {m.driverId && (
+                        <div className="flex items-center gap-1 text-xs text-slate-400">
+                          <User className="w-3 h-3" />
+                          {driverMap.get(m.driverId) || `Chauffeur #${m.driverId}`}
+                        </div>
+                      )}
+                      {m.scheduledStart && (
+                        <p className="text-[10px] text-slate-400">
+                          {format(new Date(m.scheduledStart), "d MMM yyyy, HH:mm", { locale: fr })}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                  {vehicleMissions.length > recentMissions.length + (activeMission ? 1 : 0) && (
+                    <p className="text-xs text-slate-400 text-center pt-1">
+                      + {vehicleMissions.length - recentMissions.length - (activeMission ? 1 : 0)} mission(s) plus anciennes
+                    </p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 

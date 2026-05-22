@@ -360,7 +360,11 @@ export default function MissionsPage() {
             </Card>
           ) : (
             displayMissions?.map((mission) => (
-              <Card key={mission.id} className="border-none shadow-md hover:shadow-lg transition-shadow">
+              <Card
+                key={mission.id}
+                className="border-none shadow-md hover:shadow-lg transition-shadow cursor-pointer"
+                onClick={() => navigate(`/live-map?vehicleId=${mission.vehicleId}`)}
+              >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -422,7 +426,7 @@ export default function MissionsPage() {
                       )}
                     </div>
                   )}
-                  <div className="flex items-center justify-between pt-3 border-t">
+                  <div className="flex items-center justify-between pt-3 border-t" onClick={(e) => e.stopPropagation()}>
                     <div className="text-xs text-slate-500">
                       {vehicleMap.get(mission.vehicleId) || `Véhicule #${mission.vehicleId}`} • {driverMap.get(mission.driverId) || `Chauffeur #${mission.driverId}`}
                     </div>

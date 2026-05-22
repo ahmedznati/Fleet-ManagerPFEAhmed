@@ -52,11 +52,92 @@ const tunisiaBounds: L.LatLngBoundsExpression = [
   [37.5, 11.6], // Northeast
 ];
 
-// Detect Google Maps Plus Code format (e.g. "V46W+2W4" or "V46W+2W4, Ariana")
-const PLUS_CODE_REGEX = /^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}([\s,].+)?$/i;
+// ── Open Location Code (Plus Code) decoder ─────────────────────────────────
+const OLC_ALPHABET = '23456789CFGHJMPQRVWX';
+const OLC_BASE = 20;
+
+/** Encode lat/lng to the first `length` OLC chars (no separator). */
+function olcEncodePrefix(lat: number, lng: number, length: number): string {
+  let adjLat = lat + 90;
+  let adjLng = lng + 180;
+  let code = '';
+  let latPlace = 180.0;
+  let lngPlace = 360.0;
+  for (let i = 0; i < 8 && code.length < length; i += 2) {
+    latPlace /= OLC_BASE;
+    lngPlace /= OLC_BASE;
+    const latIdx = Math.min(Math.floor(adjLat / latPlace), OLC_BASE - 1);
+    const lngIdx = Math.min(Math.floor(adjLng / lngPlace), OLC_BASE - 1);
+    code += OLC_ALPHABET[latIdx];
+    if (code.length < length) code += OLC_ALPHABET[lngIdx];
+    adjLat -= latIdx * latPlace;
+    adjLng -= lngIdx * lngPlace;
+  }
+  return code;
+}
+
+/** Decode raw OLC digit string (no separator) to centre lat/lng. */
+function olcDecodeDigits(digits: string): { lat: number; lng: number } {
+  let lat = -90.0, lng = -180.0;
+  let latPlace = 180.0, lngPlace = 360.0;
+  for (let i = 0; i < Math.min(digits.length, 8); i += 2) {
+    latPlace /= OLC_BASE;
+    lngPlace /= OLC_BASE;
+    lat += OLC_ALPHABET.indexOf(digits[i]) * latPlace;
+    if (i + 1 < digits.length) lng += OLC_ALPHABET.indexOf(digits[i + 1]) * lngPlace;
+  }
+  for (let i = 8; i < digits.length; i++) {
+    latPlace /= 5; lngPlace /= 4;
+    const idx = OLC_ALPHABET.indexOf(digits[i]);
+    if (idx < 0) break;
+    lat += Math.floor(idx / 4) * latPlace;
+    lng += (idx % 4) * lngPlace;
+  }
+  return { lat: lat + latPlace / 2, lng: lng + lngPlace / 2 };
+}
+
+/**
+ * Parse a Plus Code (full or short code) and return lat/lng.
+ * Short codes (< 8 chars before '+') require refLat/refLng reference.
+ */
+function parsePlusCode(code: string, refLat?: number, refLng?: number): { lat: number; lng: number } | null {
+  const clean = code.toUpperCase().replace(/\s/g, '');
+  const plusIdx = clean.indexOf('+');
+  if (plusIdx < 0) return null;
+  const before = clean.substring(0, plusIdx);
+  const after  = clean.substring(plusIdx + 1);
+  if (!before.split('').every(c => OLC_ALPHABET.includes(c))) return null;
+  if (!after.split('').every(c => OLC_ALPHABET.includes(c))) return null;
+  const digits = before + after;
+
+  // Full code — decode directly
+  if (plusIdx >= 8) return olcDecodeDigits(digits);
+
+  // Short code — need reference
+  if (refLat === undefined || refLng === undefined) return null;
+  const paddingLen = 8 - plusIdx;
+  const prefix = olcEncodePrefix(refLat, refLng, paddingLen);
+  const result = olcDecodeDigits(prefix + digits);
+
+  // Adjust if decoded location is > half a resolution away from reference
+  const resolution = Math.pow(OLC_BASE, 2 - paddingLen / 2);
+  const half = resolution / 2;
+  let aLat = refLat, aLng = refLng;
+  if (refLat + half < result.lat) aLat = refLat - resolution;
+  else if (refLat - half > result.lat) aLat = refLat + resolution;
+  if (refLng + half < result.lng) aLng = refLng - resolution;
+  else if (refLng - half > result.lng) aLng = refLng + resolution;
+  if (aLat !== refLat || aLng !== refLng)
+    return olcDecodeDigits(olcEncodePrefix(aLat, aLng, paddingLen) + digits);
+  return result;
+}
+
+// ── Helper regexes ──────────────────────────────────────────────────────────
+// Plus Code: "XXXX+XX" or "XXXX+XX, City"
+const PLUS_CODE_REGEX = /^[23456789CFGHJMPQRVWX]{2,8}\+[23456789CFGHJMPQRVWX]{2,3}([\s,].*)?$/i;
 const isPlusCode = (s: string) => PLUS_CODE_REGEX.test(s.trim());
 
-// Detect "lat, lng" raw coordinates
+// Raw "lat, lng"
 const LATLNG_REGEX = /^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/;
 const isLatLng = (s: string) => LATLNG_REGEX.test(s.trim());
 
@@ -158,7 +239,7 @@ export function LocationPicker({ value, onChange, placeholder, label }: Location
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     if (!q.trim()) { setSearchResults([]); return; }
 
-    // Handle raw lat,lng input immediately
+    // 1. Raw lat,lng → parse immediately
     if (isLatLng(q)) {
       const [lat, lng] = q.split(",").map((s) => parseFloat(s.trim()));
       setSelectedPosition([lat, lng]);
@@ -167,6 +248,62 @@ export function LocationPicker({ value, onChange, placeholder, label }: Location
       return;
     }
 
+    // 2. Plus Code (e.g. "V46W+2W4, Ariana") → OLC decode
+    if (isPlusCode(q)) {
+      const commaIdx = q.indexOf(',');
+      const codeOnly  = (commaIdx > 0 ? q.substring(0, commaIdx) : q).trim();
+      const cityPart  = commaIdx > 0 ? q.substring(commaIdx + 1).trim() : '';
+      const isFull    = codeOnly.indexOf('+') >= 8;
+
+      if (isFull) {
+        // Full code — no reference needed
+        const decoded = parsePlusCode(codeOnly);
+        if (decoded) {
+          setSelectedPosition([decoded.lat, decoded.lng]);
+          setSelectedName(q.trim());
+          setSearchResults([]);
+          return;
+        }
+      } else if (cityPart) {
+        // Short code — find reference city
+        const refCity = tunisiaCities.find(
+          (c) =>
+            c.name.toLowerCase() === cityPart.toLowerCase() ||
+            cityPart.toLowerCase().includes(c.name.toLowerCase())
+        );
+        if (refCity) {
+          const decoded = parsePlusCode(codeOnly, refCity.lat, refCity.lng);
+          if (decoded) {
+            setSelectedPosition([decoded.lat, decoded.lng]);
+            setSelectedName(`${codeOnly}, ${refCity.name}`);
+            setSearchResults([]);
+            return;
+          }
+        } else {
+          // Reference city not in our list — geocode it first
+          searchTimeout.current = setTimeout(async () => {
+            setIsSearching(true);
+            try {
+              const cityResults = await geocodeQuery(cityPart + ', Tunisie');
+              if (cityResults.length > 0) {
+                const ref = cityResults[0];
+                const decoded = parsePlusCode(codeOnly, ref.lat, ref.lng);
+                if (decoded) {
+                  setSelectedPosition([decoded.lat, decoded.lng]);
+                  setSelectedName(`${codeOnly}, ${cityPart}`);
+                  setSearchResults([]);
+                }
+              }
+            } finally {
+              setIsSearching(false);
+            }
+          }, 400);
+          return;
+        }
+      }
+    }
+
+    // 3. Regular address text → Nominatim
     searchTimeout.current = setTimeout(async () => {
       setIsSearching(true);
       try {

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, useMap } from "react-leaflet";
 import { icon } from "leaflet";
 import { type Vehicle, type Location } from "@shared/schema";
 import { Badge } from "./ui/badge";
@@ -32,6 +32,24 @@ const dotIcon = (color: string) => {
     popupAnchor: [0, -10]
   });
 };
+
+// Catmull-Rom spline: adds interpolated points between GPS waypoints for a smooth curve
+function interpolatePath(pts: [number, number][], steps = 24): [number, number][] {
+  if (pts.length < 2) return pts;
+  const ext: [number, number][] = [pts[0], ...pts, pts[pts.length - 1]];
+  const result: [number, number][] = [];
+  for (let i = 1; i < ext.length - 2; i++) {
+    const [p0, p1, p2, p3] = [ext[i - 1], ext[i], ext[i + 1], ext[i + 2]];
+    for (let t = 0; t < steps; t++) {
+      const s = t / steps, s2 = s * s, s3 = s2 * s;
+      const lat = 0.5 * ((2 * p1[0]) + (-p0[0] + p2[0]) * s + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * s2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * s3);
+      const lng = 0.5 * ((2 * p1[1]) + (-p0[1] + p2[1]) * s + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * s2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * s3);
+      result.push([lat, lng]);
+    }
+  }
+  result.push(pts[pts.length - 1]);
+  return result;
+}
 
 // Flies to the selected vehicle whenever selectedVehicleId changes
 function MapController({ vehicles, selectedVehicleId }: { vehicles: any[]; selectedVehicleId?: number }) {
@@ -127,10 +145,27 @@ export function MapView({ vehicles = [], selectedVehicleId, height = "500px", hi
         ))}
 
         {history.length > 0 && (
-          <Polyline 
-            positions={history.map(loc => [loc.lat, loc.lng])}
-            pathOptions={{ color: '#3b82f6', weight: 4, opacity: 0.7 }}
-          />
+          <>
+            {/* Smooth curved path via Catmull-Rom spline */}
+            <Polyline
+              positions={interpolatePath(history.map(loc => [loc.lat, loc.lng] as [number, number]))}
+              pathOptions={{ color: '#3b82f6', weight: 4, opacity: 0.8 }}
+            />
+            {/* Actual recorded GPS waypoints */}
+            {history.map((loc, idx) => (
+              <CircleMarker
+                key={idx}
+                center={[loc.lat, loc.lng]}
+                radius={idx === 0 || idx === history.length - 1 ? 6 : 4}
+                pathOptions={{
+                  color: idx === history.length - 1 ? '#1d4ed8' : '#3b82f6',
+                  weight: 2,
+                  fillColor: idx === 0 ? '#22c55e' : idx === history.length - 1 ? '#1d4ed8' : '#93c5fd',
+                  fillOpacity: 1,
+                }}
+              />
+            ))}
+          </>
         )}
       </MapContainer>
     </div>
