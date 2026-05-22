@@ -28,6 +28,23 @@ export default function VehicleDetailsPage() {
   const activeMission = vehicleMissions.find((m: any) => m.status === "in_progress");
   const recentMissions = vehicleMissions.filter((m: any) => m.status !== "in_progress").slice(0, 5);
 
+  // Show GPS history only for the most recent mission's time window
+  const lastMission = activeMission || vehicleMissions[0];
+  const missionHistory = lastMission
+    ? (history || []).filter((loc: any) => {
+        const t = new Date(loc.timestamp || loc.createdAt || 0).getTime();
+        const start = lastMission.actualStart
+          ? new Date(lastMission.actualStart).getTime()
+          : lastMission.scheduledStart
+          ? new Date(lastMission.scheduledStart).getTime()
+          : 0;
+        const end = lastMission.actualEnd
+          ? new Date(lastMission.actualEnd).getTime()
+          : Date.now();
+        return t >= start && t <= end;
+      })
+    : (history || []);
+
   const driverMap = new Map((drivers || []).map((d: any) => [d.id, `${d.firstName} ${d.lastName}`]));
 
   const getMissionStatusBadge = (status: string) => {
@@ -99,13 +116,19 @@ export default function VehicleDetailsPage() {
         <div className="lg:col-span-2">
           <Card className="h-[500px] border-none shadow-md overflow-hidden flex flex-col">
             <CardHeader className="border-b bg-white z-10 relative">
-              <CardTitle>Route History</CardTitle>
+              <CardTitle>
+                Historique de route
+                {lastMission && (
+                  <span className="text-sm font-normal text-slate-500 ml-2">— {lastMission.title}</span>
+                )}
+              </CardTitle>
             </CardHeader>
             <div className="flex-1 relative z-0">
                <MapView 
                  vehicles={[vehicle]} 
                  height="100%" 
-                 history={history || []} 
+                 history={missionHistory}
+                 missions={lastMission ? [lastMission] : []}
                />
             </div>
           </Card>

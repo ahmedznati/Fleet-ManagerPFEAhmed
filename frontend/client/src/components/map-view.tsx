@@ -4,7 +4,7 @@ import { icon } from "leaflet";
 import { type Vehicle, type Location } from "@shared/schema";
 import { Badge } from "./ui/badge";
 import { Link } from "wouter";
-import { Navigation, Clock } from "lucide-react";
+import { Navigation, Clock, MapPin } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 // Fix for default marker icon in react-leaflet
@@ -33,6 +33,22 @@ const dotIcon = (color: string) => {
   });
 };
 
+// Green flag for mission start
+const missionStartIcon = icon({
+  iconUrl: `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#22c55e" stroke="white" stroke-width="2"/><text x="12" y="16" text-anchor="middle" font-size="10" fill="white" font-weight="bold">A</text></svg>`)}`,
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+  popupAnchor: [0, -14],
+});
+
+// Red pin for mission destination
+const missionEndIcon = icon({
+  iconUrl: `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#ef4444" stroke="white" stroke-width="2"/><text x="12" y="16" text-anchor="middle" font-size="10" fill="white" font-weight="bold">B</text></svg>`)}`,
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+  popupAnchor: [0, -14],
+});
+
 // Catmull-Rom spline: adds interpolated points between GPS waypoints for a smooth curve
 function interpolatePath(pts: [number, number][], steps = 24): [number, number][] {
   if (pts.length < 2) return pts;
@@ -55,6 +71,12 @@ function interpolatePath(pts: [number, number][], steps = 24): [number, number][
 function MapController({ vehicles, selectedVehicleId }: { vehicles: any[]; selectedVehicleId?: number }) {
   const map = useMap();
 
+  // Fix Leaflet sizing when the container gets its height after React render
+  useEffect(() => {
+    const t = setTimeout(() => map.invalidateSize(), 200);
+    return () => clearTimeout(t);
+  }, [map]);
+
   useEffect(() => {
     if (!selectedVehicleId) return;
     const vehicle = vehicles.find((v) => v.id === selectedVehicleId);
@@ -71,9 +93,10 @@ interface MapViewProps {
   selectedVehicleId?: number;
   height?: string;
   history?: Location[];
+  missions?: any[];
 }
 
-export function MapView({ vehicles = [], selectedVehicleId, height = "500px", history = [] }: MapViewProps) {
+export function MapView({ vehicles = [], selectedVehicleId, height = "500px", history = [], missions = [] }: MapViewProps) {
   // Default center or center on first vehicle with GPS
   const firstWithGps = vehicles.find((v) => v.lat && v.lng);
   const center = firstWithGps
@@ -106,7 +129,7 @@ export function MapView({ vehicles = [], selectedVehicleId, height = "500px", hi
               position={[vehicle.lat, vehicle.lng]}
               icon={dotIcon(getDotColor(vehicle))}
             >
-              <Popup className="min-w-[200px]">
+              <Popup className="min-w-[220px]">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <h3 className="font-bold text-lg">{vehicle.name}</h3>
@@ -122,6 +145,27 @@ export function MapView({ vehicles = [], selectedVehicleId, height = "500px", hi
                   </div>
                   <p className="text-sm text-slate-500">{vehicle.model} • {vehicle.licensePlate}</p>
                   
+                  {/* Active mission info */}
+                  {(() => {
+                    const activeMission = missions.find((m: any) => m.vehicleId === vehicle.id && m.status === "in_progress");
+                    if (!activeMission) return null;
+                    return (
+                      <div className="border-t pt-2 mt-1 space-y-1">
+                        <p className="text-xs font-semibold text-slate-700">{activeMission.title}</p>
+                        {activeMission.startLat && activeMission.startLng && (
+                          <div className="flex items-start gap-1 text-xs text-slate-500">
+                            <span className="text-emerald-500 font-bold shrink-0">A</span>
+                            <span>Départ enregistré</span>
+                          </div>
+                        )}
+                        <div className="flex items-start gap-1 text-xs text-slate-500">
+                          <MapPin className="w-3 h-3 text-red-500 shrink-0 mt-0.5" />
+                          <span>{activeMission.endLocation}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div className="flex items-center gap-4 text-xs text-slate-400 pt-2 border-t mt-2">
                     <div className="flex items-center gap-1">
                       <Navigation className="w-3 h-3" />
@@ -136,12 +180,38 @@ export function MapView({ vehicles = [], selectedVehicleId, height = "500px", hi
                   </div>
 
                   <Link href={`/vehicles/${vehicle.id}`} className="block mt-2 text-center text-sm bg-slate-900 text-white py-1.5 rounded-md hover:bg-slate-800 transition-colors">
-                    View Details
+                    Voir détails
                   </Link>
                 </div>
               </Popup>
             </Marker>
           )
+        ))}
+
+        {/* Mission start (A) and destination (B) markers */}
+        {missions.map((mission: any) => (
+          <span key={`mission-markers-${mission.id}`}>
+            {mission.startLat && mission.startLng && (
+              <Marker position={[mission.startLat, mission.startLng]} icon={missionStartIcon}>
+                <Popup>
+                  <div className="text-sm space-y-1">
+                    <p className="font-semibold text-emerald-700">Départ</p>
+                    <p className="text-slate-600">{mission.title}</p>
+                  </div>
+                </Popup>
+              </Marker>
+            )}
+            {mission.endLat && mission.endLng && (
+              <Marker position={[mission.endLat, mission.endLng]} icon={missionEndIcon}>
+                <Popup>
+                  <div className="text-sm space-y-1">
+                    <p className="font-semibold text-red-700">Destination</p>
+                    <p className="text-slate-600">{mission.endLocation}</p>
+                  </div>
+                </Popup>
+              </Marker>
+            )}
+          </span>
         ))}
 
         {history.length > 0 && (

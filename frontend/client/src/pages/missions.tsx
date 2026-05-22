@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ClipboardList, MapPin, Calendar, AlertCircle, CheckCircle2, Clock, XCircle, Play, Users, User, Edit2, Trash2, MoreHorizontal, History, Filter, X, ShieldCheck, ShieldAlert, Navigation2 } from "lucide-react";
+import { ClipboardList, MapPin, Calendar, AlertCircle, CheckCircle2, Clock, XCircle, Play, Users, User, Edit2, Trash2, MoreHorizontal, History, Filter, X, ShieldCheck, ShieldAlert, Navigation2, Search, Archive, ArrowUpDown } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -93,6 +93,8 @@ export default function MissionsPage() {
   const [dateTo, setDateTo] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [showFilter, setShowFilter] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [, navigate] = useLocation();
 
   // Build lookup maps for names
@@ -324,18 +326,175 @@ export default function MissionsPage() {
 
   const LayoutWrapper = isAdmin ? Layout : UserLayout;
 
-  // ─── ADMIN / OPERATEUR VIEW (unchanged) ──────────────────────────────────
+  // ─── ADMIN / OPERATEUR VIEW ───────────────────────────────────────────────
   if (isAdmin || isOperateur) {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const matchesSearch = (m: any) => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      const driverName = driverMap.get(m.driverId)?.toLowerCase() || '';
+      const vehicleName = vehicleMap.get(m.vehicleId)?.toLowerCase() || '';
+      return (
+        m.title.toLowerCase().includes(q) ||
+        driverName.includes(q) ||
+        vehicleName.includes(q) ||
+        (m.endLocation || '').toLowerCase().includes(q) ||
+        (m.description || '').toLowerCase().includes(q)
+      );
+    };
+
+    const sortMissions = (list: any[]) =>
+      [...list].sort((a, b) => {
+        const da = new Date((a as any).actualEnd || a.scheduledStart || 0).getTime();
+        const db = new Date((b as any).actualEnd || b.scheduledStart || 0).getTime();
+        return sortOrder === 'newest' ? db - da : da - db;
+      });
+
+    const isArchivedMission = (m: any) => {
+      if (m.status !== 'completed' && m.status !== 'cancelled') return false;
+      const d = (m as any).actualEnd ? new Date((m as any).actualEnd) : m.scheduledStart ? new Date(m.scheduledStart) : null;
+      return !!d && d < sevenDaysAgo;
+    };
+
+    const adminActive   = sortMissions((displayMissions || []).filter(m => (m.status === 'pending' || m.status === 'in_progress') && matchesSearch(m)));
+    const adminRecent   = sortMissions((displayMissions || []).filter(m => (m.status === 'completed' || m.status === 'cancelled') && !isArchivedMission(m) && matchesSearch(m)));
+    const adminArchived = sortMissions((displayMissions || []).filter(m => isArchivedMission(m) && matchesSearch(m)));
+
+    const MissionCard = ({ mission }: { mission: any }) => (
+      <Card
+        className="border-none shadow-md hover:shadow-lg transition-shadow cursor-pointer"
+        onClick={() => navigate(`/live-map?vehicleId=${mission.vehicleId}`)}
+      >
+        <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <CardTitle className="text-lg mb-2">{mission.title}</CardTitle>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {getStatusBadge(mission.status)}
+                      {mission.priority && getPriorityBadge(mission.priority)}
+                      {getConfirmationBadge(mission)}
+                    </div>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {mission.description && (
+                  <p className="text-sm text-slate-600">{mission.description}</p>
+                )}
+                <div className="flex items-start gap-2 text-sm">
+                  <MapPin className="w-4 h-4 text-red-500 mt-0.5" />
+                  <div>
+                    <div className="font-medium text-slate-700">Destination :</div>
+                    <div className="text-slate-600">{mission.endLocation}</div>
+                  </div>
+                </div>
+                {mission.scheduledStart && (
+                  <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <Calendar className="w-4 h-4 text-slate-400" />
+                    <span>Prévu : {format(new Date(mission.scheduledStart), "PPp", { locale: fr })}</span>
+                  </div>
+                )}
+                {(mission.status === 'in_progress' || mission.status === 'completed' || mission.status === 'cancelled') && (mission as any).actualStart && (
+                  <div className={`flex items-center gap-2 text-sm font-medium ${
+                    mission.status === 'in_progress' ? 'text-amber-700' : 'text-slate-600'
+                  }`}>
+                    <Timer className="w-4 h-4" />
+                    <span>
+                      Durée : {formatDuration(
+                        (mission as any).actualEnd
+                          ? new Date((mission as any).actualEnd).getTime() - new Date((mission as any).actualStart).getTime()
+                          : now - new Date((mission as any).actualStart).getTime()
+                      )}
+                      {mission.status === 'in_progress' && <span className="ml-1 animate-pulse">●</span>}
+                    </span>
+                  </div>
+                )}
+                {((mission as any).coPilot || (mission as any).passengersCount) && (
+                  <div className="flex items-center gap-4 text-sm text-slate-600">
+                    {(mission as any).coPilot && (
+                      <span className="flex items-center gap-1">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                        Co-pilote : {(mission as any).coPilot}
+                      </span>
+                    )}
+                    {(mission as any).passengersCount && (
+                      <span className="flex items-center gap-1">
+                        <Users className="w-3.5 h-3.5 text-slate-400" />
+                        {(mission as any).passengersCount} passager{(mission as any).passengersCount > 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-3 border-t" onClick={(e) => e.stopPropagation()}>
+                  <div className="text-xs text-slate-500">
+                    {vehicleMap.get(mission.vehicleId) || `Véhicule #${mission.vehicleId}`} • {driverMap.get(mission.driverId) || `Chauffeur #${mission.driverId}`}
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    {mission.status === 'in_progress' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/live-map?vehicleId=${mission.vehicleId}`); }}
+                      >
+                        <Navigation2 className="w-3 h-3 mr-1" />
+                        Voir en direct
+                      </Button>
+                    )}
+                    {isOperateur && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {(mission.status === 'pending' || mission.status === 'in_progress') && (
+                            <MissionForm mission={mission as any} trigger={
+                              <div className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-slate-100">
+                                <Edit2 className="mr-2 h-4 w-4" /> Modifier
+                              </div>
+                            } />
+                          )}
+                          {mission.status === 'pending' && (
+                            <DropdownMenuItem className="text-orange-600 focus:text-orange-600 focus:bg-orange-50 cursor-pointer"
+                              onClick={() => updateStatusMutation.mutate({ id: mission.id, status: 'cancelled' })}>
+                              <XCircle className="mr-2 h-4 w-4" /> Annuler la mission
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
+                            onClick={() => setDeleteTarget({ id: mission.id, title: mission.title })}>
+                            <Trash2 className="mr-2 h-4 w-4" /> Supprimer
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+    );
+
+    const EmptyState = ({ label }: { label: string }) => (
+      <div className="col-span-2 py-16 text-center text-slate-400">
+        <ClipboardList className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+        <p>{label}</p>
+      </div>
+    );
+
     return (
       <LayoutWrapper>
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        {/* ── Header ── */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-bold font-display text-slate-900">Missions</h1>
-            <p className="text-slate-500 mt-2">Gérez et suivez toutes les missions.</p>
+            <p className="text-slate-500 mt-1">Gérez et suivez toutes les missions.</p>
           </div>
           {isOperateur && (
             <MissionForm trigger={
-              <Button>
+              <Button className="bg-crimson-700 hover:bg-crimson-800">
                 <ClipboardList className="w-4 h-4 mr-2" />
                 Créer une Mission
               </Button>
@@ -343,153 +502,98 @@ export default function MissionsPage() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {isLoading ? (
-            Array(4).fill(0).map((_, i) => (
-              <Card key={i} className="border-none shadow-md">
-                <CardHeader><Skeleton className="h-6 w-48" /></CardHeader>
-                <CardContent><Skeleton className="h-32 w-full" /></CardContent>
-              </Card>
-            ))
-          ) : missions?.length === 0 ? (
-            <Card className="border-none shadow-md col-span-2">
-              <CardContent className="py-12 text-center text-slate-500">
-                <ClipboardList className="w-12 h-12 mx-auto mb-4 text-slate-300" />
-                <p>Aucune mission trouvée. Créez votre première mission pour commencer.</p>
-              </CardContent>
-            </Card>
-          ) : (
-            displayMissions?.map((mission) => (
-              <Card
-                key={mission.id}
-                className="border-none shadow-md hover:shadow-lg transition-shadow cursor-pointer"
-                onClick={() => navigate(`/live-map?vehicleId=${mission.vehicleId}`)}
+        {/* ── Search + Sort bar ── */}
+        <div className="flex flex-col sm:flex-row gap-3 mb-6">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input
+              placeholder="Rechercher par nom, chauffeur, véhicule, destination…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="pl-9 h-10"
+            />
+            {searchQuery && (
+              <button
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                onClick={() => setSearchQuery('')}
               >
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-lg mb-2">{mission.title}</CardTitle>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {getStatusBadge(mission.status)}
-                        {mission.priority && getPriorityBadge(mission.priority)}
-                        {getConfirmationBadge(mission)}
-                      </div>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {mission.description && (
-                    <p className="text-sm text-slate-600">{mission.description}</p>
-                  )}
-                  <div className="flex items-start gap-2 text-sm">
-                    <MapPin className="w-4 h-4 text-red-500 mt-0.5" />
-                    <div>
-                      <div className="font-medium text-slate-700">Destination :</div>
-                      <div className="text-slate-600">{mission.endLocation}</div>
-                    </div>
-                  </div>
-                  {mission.scheduledStart && (
-                    <div className="flex items-center gap-2 text-sm text-slate-600">
-                      <Calendar className="w-4 h-4 text-slate-400" />
-                      <span>Prévu : {format(new Date(mission.scheduledStart), "PPp", { locale: fr })}</span>
-                    </div>
-                  )}
-                  {/* Mission duration */}
-                  {(mission.status === 'in_progress' || mission.status === 'completed' || mission.status === 'cancelled') && (mission as any).actualStart && (
-                    <div className={`flex items-center gap-2 text-sm font-medium ${
-                      mission.status === 'in_progress' ? 'text-amber-700' : 'text-slate-600'
-                    }`}>
-                      <Timer className="w-4 h-4" />
-                      <span>
-                        Durée : {formatDuration(
-                          (mission as any).actualEnd
-                            ? new Date((mission as any).actualEnd).getTime() - new Date((mission as any).actualStart).getTime()
-                            : now - new Date((mission as any).actualStart).getTime()
-                        )}
-                        {mission.status === 'in_progress' && <span className="ml-1 animate-pulse">●</span>}
-                      </span>
-                    </div>
-                  )}
-                  {((mission as any).coPilot || (mission as any).passengersCount) && (
-                    <div className="flex items-center gap-4 text-sm text-slate-600">
-                      {(mission as any).coPilot && (
-                        <span className="flex items-center gap-1">
-                          <User className="w-3.5 h-3.5 text-slate-400" />
-                          Co-pilote : {(mission as any).coPilot}
-                        </span>
-                      )}
-                      {(mission as any).passengersCount && (
-                        <span className="flex items-center gap-1">
-                          <Users className="w-3.5 h-3.5 text-slate-400" />
-                          {(mission as any).passengersCount} passager{(mission as any).passengersCount > 1 ? 's' : ''}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between pt-3 border-t" onClick={(e) => e.stopPropagation()}>
-                    <div className="text-xs text-slate-500">
-                      {vehicleMap.get(mission.vehicleId) || `Véhicule #${mission.vehicleId}`} • {driverMap.get(mission.driverId) || `Chauffeur #${mission.driverId}`}
-                    </div>
-                    <div className="flex gap-2 items-center">
-                      {mission.status === 'in_progress' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-emerald-700 border-emerald-300 hover:bg-emerald-50"
-                          onClick={(e) => { e.stopPropagation(); navigate(`/live-map?vehicleId=${mission.vehicleId}`); }}
-                        >
-                          <Navigation2 className="w-3 h-3 mr-1" />
-                          Voir en direct
-                        </Button>
-                      )}
-                      {isChauffeur && mission.status === 'pending' && (
-                        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700"
-                          onClick={() => updateStatusMutation.mutate({ id: mission.id, status: 'in_progress' })}>
-                          <Play className="w-3 h-3 mr-1" />Démarrer
-                        </Button>
-                      )}
-                      {isChauffeur && mission.status === 'in_progress' && (
-                        <Button size="sm" className="bg-blue-600 hover:bg-blue-700"
-                          onClick={() => completeMissionWithGps(mission.id, updateStatusMutation.mutate)}>
-                          <CheckCircle2 className="w-3 h-3 mr-1" />Terminer
-                        </Button>
-                      )}
-                      {isOperateur && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {(mission.status === 'pending' || mission.status === 'in_progress') && (
-                              <MissionForm mission={mission as any} trigger={
-                                <div className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-slate-100">
-                                  <Edit2 className="mr-2 h-4 w-4" /> Modifier
-                                </div>
-                              } />
-                            )}
-                            {mission.status === 'pending' && (
-                              <DropdownMenuItem className="text-orange-600 focus:text-orange-600 focus:bg-orange-50 cursor-pointer"
-                                onClick={() => updateStatusMutation.mutate({ id: mission.id, status: 'cancelled' })}>
-                                <XCircle className="mr-2 h-4 w-4" /> Annuler la mission
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer"
-                              onClick={() => setDeleteTarget({ id: mission.id, title: mission.title })}>
-                              <Trash2 className="mr-2 h-4 w-4" /> Supprimer
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          )}
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-10 gap-2 shrink-0"
+            onClick={() => setSortOrder(o => o === 'newest' ? 'oldest' : 'newest')}
+          >
+            <ArrowUpDown className="w-4 h-4" />
+            {sortOrder === 'newest' ? 'Plus récent' : 'Plus ancien'}
+          </Button>
         </div>
+
+        {/* ── Tabs ── */}
+        <Tabs defaultValue="active">
+          <TabsList className="mb-6">
+            <TabsTrigger value="active" className="gap-2">
+              <Clock className="w-4 h-4" />
+              En cours
+              {adminActive.length > 0 && <span className="ml-1 bg-amber-500 text-white text-xs rounded-full px-1.5">{adminActive.length}</span>}
+            </TabsTrigger>
+            <TabsTrigger value="done" className="gap-2">
+              <CheckCircle2 className="w-4 h-4" />
+              Terminées
+              {adminRecent.length > 0 && <span className="ml-1 bg-emerald-500 text-white text-xs rounded-full px-1.5">{adminRecent.length}</span>}
+            </TabsTrigger>
+            <TabsTrigger value="archives" className="gap-2">
+              <Archive className="w-4 h-4" />
+              Archives
+              {adminArchived.length > 0 && <span className="ml-1 bg-slate-400 text-white text-xs rounded-full px-1.5">{adminArchived.length}</span>}
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Active tab */}
+          <TabsContent value="active">
+            {isLoading ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {Array(4).fill(0).map((_, i) => (
+                  <Card key={i} className="border-none shadow-md">
+                    <CardHeader><Skeleton className="h-6 w-48" /></CardHeader>
+                    <CardContent><Skeleton className="h-32 w-full" /></CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {adminActive.length === 0
+                  ? <EmptyState label={searchQuery ? 'Aucun résultat pour cette recherche.' : 'Aucune mission active en ce moment.'} />
+                  : adminActive.map(m => <MissionCard key={m.id} mission={m} />)}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Completed tab (≤ 7 days) */}
+          <TabsContent value="done">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {adminRecent.length === 0
+                ? <EmptyState label={searchQuery ? 'Aucun résultat pour cette recherche.' : 'Aucune mission terminée récemment.'} />
+                : adminRecent.map(m => <MissionCard key={m.id} mission={m} />)}
+            </div>
+          </TabsContent>
+
+          {/* Archives tab (> 7 days) */}
+          <TabsContent value="archives">
+            <div className="mb-4 flex items-center gap-2 text-sm text-slate-500 bg-slate-50 rounded-lg px-4 py-2.5">
+              <Archive className="w-4 h-4" />
+              Missions terminées ou annulées il y a plus de 7 jours.
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {adminArchived.length === 0
+                ? <EmptyState label={searchQuery ? 'Aucun résultat pour cette recherche.' : 'Aucune mission archivée.'} />
+                : adminArchived.map(m => <MissionCard key={m.id} mission={m} />)}
+            </div>
+          </TabsContent>
+        </Tabs>
 
         <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
           <AlertDialogContent>

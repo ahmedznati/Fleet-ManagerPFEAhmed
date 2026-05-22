@@ -217,11 +217,12 @@ export default function LiveMapPage() {
           </div>
 
           {/* Map */}
-          <div className="lg:col-span-3 rounded-xl overflow-hidden shadow-2xl border border-slate-200">
+          <div className="lg:col-span-3 rounded-xl overflow-hidden shadow-2xl border border-slate-200" style={{ height: "100%" }}>
             <MapView 
               vehicles={vehiclesWithGps} 
               selectedVehicleId={selectedVehicleId || undefined}
-              height="100%" 
+              height="100%"
+              missions={(missions || []).filter((m: any) => m.status === "in_progress")}
             />
           </div>
         </div>
