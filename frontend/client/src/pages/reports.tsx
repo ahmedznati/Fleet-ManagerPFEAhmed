@@ -13,6 +13,32 @@ import { fr } from "date-fns/locale";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
+// Strip diacritics and non-ASCII chars for PDF output
+const toAscii = (s: string) =>
+  String(s)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x00-\x7F]/g, " ");
+
+// Haversine distance in km
+const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const missionKm = (m: any) => {
+  if (m.distance && Number(m.distance) > 0) return Number(m.distance);
+  if (m.startLat && m.startLng && m.endLat && m.endLng)
+    return haversineKm(Number(m.startLat), Number(m.startLng), Number(m.endLat), Number(m.endLng));
+  return 0;
+};
+
 export default function ReportsPage() {
   const { data: vehicles, isLoading: vehiclesLoading } = useVehicles();
   const { data: missions, isLoading: missionsLoading } = useMissions();
@@ -22,29 +48,19 @@ export default function ReportsPage() {
 
   const driverMap = new Map((drivers || []).map((d: any) => [d.id, `${d.firstName} ${d.lastName}`]));
 
-  // Calculate vehicle statistics
   const getVehicleStats = () => {
     if (!vehicles || !missions) return [];
-
     return vehicles.map(vehicle => {
       const vehicleMissions = missions.filter(m => m.vehicleId === vehicle.id);
-      const completedMissions = vehicleMissions.filter(m => m.status === 'completed');
-      const inProgressMissions = vehicleMissions.filter(m => m.status === 'in_progress');
-      const cancelledMissions = vehicleMissions.filter(m => m.status === 'cancelled');
+      const completedMissions = vehicleMissions.filter(m => m.status === "completed");
+      const inProgressMissions = vehicleMissions.filter(m => m.status === "in_progress");
+      const cancelledMissions = vehicleMissions.filter(m => m.status === "cancelled");
       const utilizationRate = vehicleMissions.length > 0
-        ? Math.round((completedMissions.length / vehicleMissions.length) * 100)
-        : 0;
-
-      // Total distance across completed missions
-      const totalKm = vehicleMissions
-        .filter(m => m.distance)
-        .reduce((sum, m) => sum + Number(m.distance || 0), 0);
-
-      // Total mission time (ms)
+        ? Math.round((completedMissions.length / vehicleMissions.length) * 100) : 0;
+      const totalKm = vehicleMissions.reduce((sum, m) => sum + missionKm(m), 0);
       const totalMs = vehicleMissions
         .filter(m => m.actualStart && m.actualEnd)
         .reduce((sum, m) => sum + (new Date(m.actualEnd!).getTime() - new Date(m.actualStart!).getTime()), 0);
-
       return {
         ...vehicle,
         totalMissions: vehicleMissions.length,
@@ -62,64 +78,64 @@ export default function ReportsPage() {
 
   const fleetStats = {
     totalVehicles: vehicles?.length || 0,
-    activeVehicles: vehicles?.filter(v => v.status === 'active').length || 0,
-    maintenanceVehicles: vehicles?.filter(v => v.status === 'maintenance').length || 0,
+    activeVehicles: vehicles?.filter(v => v.status === "active").length || 0,
+    maintenanceVehicles: vehicles?.filter(v => v.status === "maintenance").length || 0,
     totalMissions: missions?.length || 0,
-    completedMissions: missions?.filter(m => m.status === 'completed').length || 0,
-    cancelledMissions: missions?.filter(m => m.status === 'cancelled').length || 0,
-    inProgressMissions: missions?.filter(m => m.status === 'in_progress').length || 0,
+    completedMissions: missions?.filter(m => m.status === "completed").length || 0,
+    cancelledMissions: missions?.filter(m => m.status === "cancelled").length || 0,
+    inProgressMissions: missions?.filter(m => m.status === "in_progress").length || 0,
     avgUtilization: vehicleStats.length > 0
-      ? Math.round(vehicleStats.reduce((sum, v) => sum + v.utilizationRate, 0) / vehicleStats.length)
-      : 0,
+      ? Math.round(vehicleStats.reduce((sum, v) => sum + v.utilizationRate, 0) / vehicleStats.length) : 0,
     totalKm: vehicleStats.reduce((sum, v) => sum + v.totalKm, 0),
   };
 
   const fmtDuration = (ms: number) => {
-    if (!ms) return "â€”";
+    if (!ms) return "N/A";
     const d = intervalToDuration({ start: 0, end: ms });
-    return formatDuration(d, { format: ["hours", "minutes"], locale: fr }) || "< 1 min";
+    return toAscii(formatDuration(d, { format: ["hours", "minutes"], locale: fr }) || "< 1 min");
   };
 
-  // â”€â”€â”€ PDF export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const exportPDF = () => {
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     const pageW = doc.internal.pageSize.getWidth();
     const now = new Date();
-    const dateStr = format(now, "dd/MM/yyyy Ã  HH:mm");
+    const dateStr = format(now, "dd/MM/yyyy HH:mm");
 
-    // â”€â”€ Header band â”€â”€
-    doc.setFillColor(15, 23, 42);           // slate-900
+    // Header
+    doc.setFillColor(15, 23, 42);
     doc.rect(0, 0, pageW, 22, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(16);
     doc.setFont("helvetica", "bold");
-    doc.text("FleetGuard â€” Rapport de Flotte", 14, 13);
+    doc.text("FleetGuard - Rapport de Flotte", 14, 13);
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    doc.text(`GÃ©nÃ©rÃ© le ${dateStr}`, pageW - 14, 13, { align: "right" });
+    doc.text(`Genere le ${dateStr}`, pageW - 14, 13, { align: "right" });
 
     let y = 30;
 
-    // â”€â”€ Section 1: KPI summary boxes â”€â”€
+    // KPI boxes
     doc.setTextColor(30, 41, 59);
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
     doc.text("Vue d'ensemble de la flotte", 14, y);
     y += 6;
 
-    const kpis = [
-      ["VÃ©hicules", String(fleetStats.totalVehicles), `${fleetStats.activeVehicles} actifs`],
-      ["Total missions", String(fleetStats.totalMissions), `${fleetStats.completedMissions} terminÃ©es`],
-      ["En cours", String(fleetStats.inProgressMissions), `${fleetStats.cancelledMissions} annulÃ©es`],
-      ["Taux de rÃ©ussite", `${fleetStats.totalMissions > 0 ? Math.round((fleetStats.completedMissions / fleetStats.totalMissions) * 100) : 0}%`, "missions complÃ¨tes"],
-      ["Utilisation moy.", `${fleetStats.avgUtilization}%`, "par vÃ©hicule"],
+    const successRate = fleetStats.totalMissions > 0
+      ? Math.round((fleetStats.completedMissions / fleetStats.totalMissions) * 100) : 0;
+
+    const kpis: [string, string, string][] = [
+      ["Vehicules", String(fleetStats.totalVehicles), `${fleetStats.activeVehicles} actifs`],
+      ["Total missions", String(fleetStats.totalMissions), `${fleetStats.completedMissions} terminees`],
+      ["En cours", String(fleetStats.inProgressMissions), `${fleetStats.cancelledMissions} annulees`],
+      ["Taux de reussite", `${successRate}%`, "missions completes"],
       ["Distance totale", `${fleetStats.totalKm.toFixed(1)} km`, "toutes missions"],
     ];
 
-    const boxW = (pageW - 28 - 10) / kpis.length;
+    const boxW = (pageW - 28 - (kpis.length - 1) * 2) / kpis.length;
     kpis.forEach(([label, value, sub], i) => {
       const x = 14 + i * (boxW + 2);
-      doc.setFillColor(241, 245, 249);     // slate-100
+      doc.setFillColor(241, 245, 249);
       doc.roundedRect(x, y, boxW, 18, 2, 2, "F");
       doc.setFontSize(8);
       doc.setFont("helvetica", "normal");
@@ -137,16 +153,16 @@ export default function ReportsPage() {
 
     y += 26;
 
-    // â”€â”€ Section 2: Vehicle performance table â”€â”€
+    // Vehicle table (no Utilisation column)
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(30, 41, 59);
-    doc.text("Performances par vÃ©hicule", 14, y);
+    doc.text("Performances par vehicule", 14, y);
     y += 4;
 
     autoTable(doc, {
       startY: y,
-      head: [["VÃ©hicule", "Immatriculation", "Statut", "Missions", "TerminÃ©es", "AnnulÃ©es", "En cours", "Utilisation", "Distance (km)", "DurÃ©e totale"]],
+      head: [["Vehicule", "Immatriculation", "Statut", "Missions", "Terminees", "Annulees", "En cours", "Distance (km)", "Duree totale"]],
       body: vehicleStats.map(v => [
         v.name,
         v.licensePlate,
@@ -155,48 +171,35 @@ export default function ReportsPage() {
         String(v.completedMissions),
         String(v.cancelledMissions),
         String(v.inProgressMissions),
-        `${v.utilizationRate}%`,
-        v.totalKm > 0 ? v.totalKm.toFixed(1) : "â€”",
-        v.totalMs > 0 ? fmtDuration(v.totalMs) : "â€”",
+        v.totalKm.toFixed(1),
+        v.totalMs > 0 ? fmtDuration(v.totalMs) : "N/A",
       ]),
       styles: { fontSize: 8, cellPadding: 2.5 },
       headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: "bold", fontSize: 8 },
       alternateRowStyles: { fillColor: [248, 250, 252] },
       columnStyles: {
         0: { fontStyle: "bold" },
-        7: { halign: "center" },
         3: { halign: "center" },
         4: { halign: "center" },
         5: { halign: "center" },
         6: { halign: "center" },
-      },
-      didParseCell: (data) => {
-        if (data.section === "body" && data.column.index === 7) {
-          const val = parseInt(data.cell.text[0]);
-          if (val >= 80) data.cell.styles.textColor = [5, 150, 105];
-          else if (val >= 50) data.cell.styles.textColor = [37, 99, 235];
-          else if (val > 0) data.cell.styles.textColor = [217, 119, 6];
-        }
+        7: { halign: "center" },
       },
     });
 
-    y = (doc as any).lastAutoTable.finalY + 10;
-
-    // â”€â”€ New page for mission details â”€â”€
+    // Page 2: Mission details
     doc.addPage();
     doc.setFillColor(15, 23, 42);
     doc.rect(0, 0, pageW, 22, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
-    doc.text("DÃ©tail des Missions", 14, 13);
+    doc.text("Detail des Missions", 14, 13);
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    doc.text(`FleetGuard â€¢ ${dateStr}`, pageW - 14, 13, { align: "right" });
+    doc.text(`FleetGuard  ${dateStr}`, pageW - 14, 13, { align: "right" });
 
     y = 30;
-
-    // â”€â”€ Section 3: Mission details table â”€â”€
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(30, 41, 59);
@@ -208,38 +211,38 @@ export default function ReportsPage() {
       .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
       .map((m: any) => {
         const veh = (vehicles || []).find((v: any) => v.id === m.vehicleId);
-        const driverName = m.driverId ? (driverMap.get(m.driverId) || `#${m.driverId}`) : "â€”";
+        const driverName = m.driverId ? (driverMap.get(m.driverId) || `#${m.driverId}`) : "N/A";
         const statusLabel: Record<string, string> = {
           pending: "En attente", in_progress: "En cours",
-          completed: "TerminÃ©e", cancelled: "AnnulÃ©e",
+          completed: "Terminee", cancelled: "Annulee",
         };
         const durationMs = m.actualStart && m.actualEnd
-          ? new Date(m.actualEnd).getTime() - new Date(m.actualStart).getTime()
-          : null;
+          ? new Date(m.actualEnd).getTime() - new Date(m.actualStart).getTime() : null;
+        const km = missionKm(m);
         return [
-          m.title,
-          veh?.name || `#${m.vehicleId}`,
-          driverName,
+          toAscii(m.title || ""),
+          toAscii(veh?.name || `#${m.vehicleId}`),
+          toAscii(driverName),
           statusLabel[m.status] || m.status,
-          m.scheduledStart ? format(new Date(m.scheduledStart), "dd/MM/yy HH:mm") : "â€”",
-          m.actualStart ? format(new Date(m.actualStart), "dd/MM/yy HH:mm") : "â€”",
-          m.actualEnd ? format(new Date(m.actualEnd), "dd/MM/yy HH:mm") : "â€”",
-          durationMs ? fmtDuration(durationMs) : "â€”",
-          m.distance ? `${Number(m.distance).toFixed(1)}` : "â€”",
-          m.endLocation || "â€”",
-          m.priority ? m.priority.charAt(0).toUpperCase() + m.priority.slice(1) : "Normal",
+          m.scheduledStart ? format(new Date(m.scheduledStart), "dd/MM/yy HH:mm") : "N/A",
+          m.actualStart ? format(new Date(m.actualStart), "dd/MM/yy HH:mm") : "N/A",
+          m.actualEnd ? format(new Date(m.actualEnd), "dd/MM/yy HH:mm") : "N/A",
+          durationMs ? fmtDuration(durationMs) : "N/A",
+          km.toFixed(1),
+          toAscii(m.endLocation || "N/A"),
+          toAscii(m.priority ? m.priority.charAt(0).toUpperCase() + m.priority.slice(1) : "Normal"),
         ];
       });
 
     autoTable(doc, {
       startY: y,
-      head: [["Mission", "VÃ©hicule", "Chauffeur", "Statut", "PlanifiÃ©", "DÃ©but rÃ©el", "Fin rÃ©elle", "DurÃ©e", "Km", "Destination", "PrioritÃ©"]],
+      head: [["Mission", "Vehicule", "Chauffeur", "Statut", "Planifie", "Debut reel", "Fin reelle", "Duree", "Km", "Destination", "Priorite"]],
       body: missionRows,
       styles: { fontSize: 7.5, cellPadding: 2 },
       headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: "bold", fontSize: 7.5 },
       alternateRowStyles: { fillColor: [248, 250, 252] },
       columnStyles: {
-        0: { fontStyle: "bold", cellWidth: 30 },
+        0: { fontStyle: "bold", cellWidth: 28 },
         3: { halign: "center" },
         8: { halign: "center" },
         10: { halign: "center" },
@@ -247,9 +250,9 @@ export default function ReportsPage() {
       didParseCell: (data) => {
         if (data.section === "body" && data.column.index === 3) {
           const t = data.cell.text[0];
-          if (t === "TerminÃ©e") data.cell.styles.textColor = [5, 150, 105];
+          if (t === "Terminee") data.cell.styles.textColor = [5, 150, 105];
           else if (t === "En cours") data.cell.styles.textColor = [37, 99, 235];
-          else if (t === "AnnulÃ©e") data.cell.styles.textColor = [220, 38, 38];
+          else if (t === "Annulee") data.cell.styles.textColor = [220, 38, 38];
           else data.cell.styles.textColor = [180, 140, 0];
         }
         if (data.section === "body" && data.column.index === 10) {
@@ -259,18 +262,17 @@ export default function ReportsPage() {
       },
     });
 
-    // â”€â”€ Section 4: Driver summary (if data available) â”€â”€
+    // Driver summary
     if (drivers && drivers.length > 0) {
       const driverY = (doc as any).lastAutoTable.finalY + 10;
       const remainingH = doc.internal.pageSize.getHeight() - driverY - 15;
       if (remainingH < 40) doc.addPage();
-
       const dY = remainingH < 40 ? 30 : driverY;
 
       doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(30, 41, 59);
-      doc.text("RÃ©sumÃ© par chauffeur", 14, remainingH < 40 ? 28 : driverY - 2);
+      doc.text("Resume par chauffeur", 14, remainingH < 40 ? 28 : driverY - 2);
 
       const driverRows = (drivers as any[]).map(d => {
         const dMissions = (missions || []).filter((m: any) => m.driverId === d.id);
@@ -278,24 +280,22 @@ export default function ReportsPage() {
         const dMs = dMissions
           .filter((m: any) => m.actualStart && m.actualEnd)
           .reduce((sum: number, m: any) => sum + (new Date(m.actualEnd).getTime() - new Date(m.actualStart).getTime()), 0);
-        const dKm = dMissions
-          .filter((m: any) => m.distance)
-          .reduce((sum: number, m: any) => sum + Number(m.distance || 0), 0);
+        const dKm = dMissions.reduce((sum: number, m: any) => sum + missionKm(m), 0);
         return [
-          `${d.firstName} ${d.lastName}`,
-          d.matricule || "â€”",
-          d.licenseNumber || "â€”",
+          toAscii(`${d.firstName} ${d.lastName}`),
+          d.matricule || "N/A",
+          d.licenseNumber || "N/A",
           String(dMissions.length),
           String(dCompleted.length),
-          dMissions.length > 0 ? `${Math.round((dCompleted.length / dMissions.length) * 100)}%` : "â€”",
-          dKm > 0 ? `${dKm.toFixed(1)}` : "â€”",
-          dMs > 0 ? fmtDuration(dMs) : "â€”",
+          dMissions.length > 0 ? `${Math.round((dCompleted.length / dMissions.length) * 100)}%` : "N/A",
+          dKm.toFixed(1),
+          dMs > 0 ? fmtDuration(dMs) : "N/A",
         ];
       });
 
       autoTable(doc, {
         startY: dY,
-        head: [["Chauffeur", "Matricule", "Permis", "Missions", "TerminÃ©es", "Taux", "Km total", "Temps total"]],
+        head: [["Chauffeur", "Matricule", "Permis", "Missions", "Terminees", "Taux", "Km total", "Temps total"]],
         body: driverRows,
         styles: { fontSize: 8, cellPadding: 2.5 },
         headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold", fontSize: 8 },
@@ -310,7 +310,7 @@ export default function ReportsPage() {
       });
     }
 
-    // â”€â”€ Footer on every page â”€â”€
+    // Footer
     const pageCount = doc.getNumberOfPages();
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i);
@@ -318,7 +318,7 @@ export default function ReportsPage() {
       doc.setFont("helvetica", "normal");
       doc.setTextColor(148, 163, 184);
       doc.text(
-        `FleetGuard â€” Document confidentiel â€¢ Page ${i} / ${pageCount}`,
+        `FleetGuard - Document confidentiel  Page ${i} / ${pageCount}`,
         pageW / 2,
         doc.internal.pageSize.getHeight() - 5,
         { align: "center" }
@@ -336,7 +336,7 @@ export default function ReportsPage() {
     };
     return (
       <Badge className={`border-0 ${variants[status] || "bg-slate-100 text-slate-700"}`}>
-        {status.replace('_', ' ').charAt(0).toUpperCase() + status.replace('_', ' ').slice(1)}
+        {status.replace("_", " ").charAt(0).toUpperCase() + status.replace("_", " ").slice(1)}
       </Badge>
     );
   };
@@ -353,9 +353,9 @@ export default function ReportsPage() {
       <div className="space-y-6">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-3xl font-bold font-display text-slate-900">Rapports & Analyses</h1>
+            <h1 className="text-3xl font-bold font-display text-slate-900">Rapports &amp; Analyses</h1>
             <p className="text-slate-500 mt-2">
-              Statistiques d'utilisation et de performance des vÃ©hicules
+              Statistiques d&apos;utilisation et de performance des vehicules
             </p>
           </div>
           <Button
@@ -368,12 +368,11 @@ export default function ReportsPage() {
           </Button>
         </div>
 
-        {/* Fleet Overview Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Card className="border-none shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-slate-600">Total VÃ©hicules</CardTitle>
+                <CardTitle className="text-sm font-medium text-slate-600">Total Vehicules</CardTitle>
                 <BarChart3 className="w-4 h-4 text-slate-400" />
               </div>
             </CardHeader>
@@ -395,7 +394,7 @@ export default function ReportsPage() {
             <CardContent>
               <div className="text-2xl font-bold">{fleetStats.totalMissions}</div>
               <p className="text-xs text-slate-500 mt-1">
-                {fleetStats.completedMissions} terminÃ©e(s)
+                {fleetStats.completedMissions} terminee(s)
               </p>
             </CardContent>
           </Card>
@@ -410,7 +409,7 @@ export default function ReportsPage() {
             <CardContent>
               <div className="text-2xl font-bold">{fleetStats.avgUtilization}%</div>
               <p className="text-xs text-slate-500 mt-1">
-                Taux d'achÃ¨vement moyen
+                Taux d&apos;achevement moyen
               </p>
             </CardContent>
           </Card>
@@ -418,7 +417,7 @@ export default function ReportsPage() {
           <Card className="border-none shadow-md">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-slate-600">Taux de RÃ©ussite</CardTitle>
+                <CardTitle className="text-sm font-medium text-slate-600">Taux de Reussite</CardTitle>
                 <CheckCircle2 className="w-4 h-4 text-slate-400" />
               </div>
             </CardHeader>
@@ -429,16 +428,15 @@ export default function ReportsPage() {
                   : 0}%
               </div>
               <p className="text-xs text-slate-500 mt-1">
-                Taux d'achÃ¨vement des missions
+                Taux d&apos;achevement des missions
               </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Vehicle Performance Table */}
         <Card className="border-none shadow-md">
           <CardHeader>
-            <CardTitle>DÃ©tails des Performances des VÃ©hicules</CardTitle>
+            <CardTitle>Details des Performances des Vehicules</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -451,10 +449,10 @@ export default function ReportsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>VÃ©hicule</TableHead>
+                    <TableHead>Vehicule</TableHead>
                     <TableHead>Statut</TableHead>
                     <TableHead className="text-center">Total Missions</TableHead>
-                    <TableHead className="text-center">TerminÃ©es</TableHead>
+                    <TableHead className="text-center">Terminees</TableHead>
                     <TableHead className="text-center">En Cours</TableHead>
                     <TableHead className="text-center">Utilisation</TableHead>
                   </TableRow>
@@ -463,7 +461,7 @@ export default function ReportsPage() {
                   {vehicleStats.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-8 text-slate-500">
-                        Aucune donnÃ©e de vÃ©hicule disponible
+                        Aucune donnee de vehicule disponible
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -506,4 +504,3 @@ export default function ReportsPage() {
     </Layout>
   );
 }
-
