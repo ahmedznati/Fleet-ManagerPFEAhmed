@@ -149,10 +149,12 @@ export function DriverForm({ driver, trigger }: DriverFormProps) {
                         field.onChange(value);
                       }}
                       className="font-mono tracking-wider"
-                      disabled={isEditing}
                     />
                   </FormControl>
-                  <p className="text-xs text-slate-500">10 chiffres requis — utilisé pour la connexion</p>
+                  <p className="text-xs text-slate-500">
+                    10 chiffres requis — utilisé pour la connexion
+                    {isEditing && <span className="text-amber-600 ml-1">(modifier change les identifiants du chauffeur)</span>}
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}

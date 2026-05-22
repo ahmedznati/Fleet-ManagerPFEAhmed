@@ -439,6 +439,17 @@ export async function registerRoutes(
       // Update the driver
       const driver = await storage.updateDriver(driverId, input);
       if (!driver) return res.status(404).json({ message: "Driver not found" });
+
+      // If a new matricule is provided, update it in the users (auth) table
+      if (input.matricule && currentDriver.userId) {
+        const existingMatricule = await db.select().from(users).where(eq(users.matricule, input.matricule));
+        if (existingMatricule.length > 0 && existingMatricule[0].id !== currentDriver.userId) {
+          return res.status(400).json({ message: "Ce matricule est déjà utilisé par un autre utilisateur." });
+        }
+        await db.update(users)
+          .set({ matricule: input.matricule })
+          .where(eq(users.id, currentDriver.userId));
+      }
       
       // Handle vehicle assignment changes
       const oldVehicleId = currentDriver.assignedVehicleId;
