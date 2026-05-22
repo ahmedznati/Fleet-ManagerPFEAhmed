@@ -1,4 +1,5 @@
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
+import { useEffect } from "react";
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import { icon } from "leaflet";
 import { type Vehicle, type Location } from "@shared/schema";
 import { Badge } from "./ui/badge";
@@ -32,6 +33,21 @@ const dotIcon = (color: string) => {
   });
 };
 
+// Flies to the selected vehicle whenever selectedVehicleId changes
+function MapController({ vehicles, selectedVehicleId }: { vehicles: any[]; selectedVehicleId?: number }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!selectedVehicleId) return;
+    const vehicle = vehicles.find((v) => v.id === selectedVehicleId);
+    if (vehicle?.lat && vehicle?.lng) {
+      map.flyTo([vehicle.lat, vehicle.lng], 16, { duration: 1.2 });
+    }
+  }, [selectedVehicleId, map, vehicles]);
+
+  return null;
+}
+
 interface MapViewProps {
   vehicles?: Vehicle[];
   selectedVehicleId?: number;
@@ -40,19 +56,15 @@ interface MapViewProps {
 }
 
 export function MapView({ vehicles = [], selectedVehicleId, height = "500px", history = [] }: MapViewProps) {
-  // Default center (e.g., Paris) or center on first vehicle
-  const center = vehicles.length > 0 && vehicles[0].lat && vehicles[0].lng
-    ? [vehicles[0].lat, vehicles[0].lng] as [number, number]
+  // Default center or center on first vehicle with GPS
+  const firstWithGps = vehicles.find((v) => v.lat && v.lng);
+  const center = firstWithGps
+    ? [firstWithGps.lat, firstWithGps.lng] as [number, number]
     : [48.8566, 2.3522] as [number, number];
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return '#10b981'; // emerald-500
-      case 'maintenance': return '#f59e0b'; // amber-500
-      case 'inactive': return '#ef4444'; // rose-500
-      default: return '#64748b'; // slate-500
-    }
-  };
+  // Green if on an active mission, gray otherwise
+  const getDotColor = (vehicle: any) =>
+    vehicle.isOnMission ? "#10b981" : "#94a3b8";
 
   return (
     <div className="rounded-xl overflow-hidden border border-slate-200 shadow-lg" style={{ height }}>
@@ -67,23 +79,27 @@ export function MapView({ vehicles = [], selectedVehicleId, height = "500px", hi
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         />
 
+        <MapController vehicles={vehicles} selectedVehicleId={selectedVehicleId} />
+
         {vehicles.map((vehicle) => (
           vehicle.lat && vehicle.lng && (
             <Marker 
               key={vehicle.id} 
               position={[vehicle.lat, vehicle.lng]}
-              icon={dotIcon(getStatusColor(vehicle.status))}
+              icon={dotIcon(getDotColor(vehicle))}
             >
               <Popup className="min-w-[200px]">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <h3 className="font-bold text-lg">{vehicle.name}</h3>
-                    <Badge variant={vehicle.status === 'active' ? 'default' : 'secondary'} 
-                           className={
-                             vehicle.status === 'active' ? 'bg-emerald-500 hover:bg-emerald-600' : 
-                             vehicle.status === 'maintenance' ? 'bg-amber-500 hover:bg-amber-600' : ''
-                           }>
-                      {vehicle.status}
+                    <Badge
+                      className={
+                        (vehicle as any).isOnMission
+                          ? "bg-emerald-500 hover:bg-emerald-600 text-white"
+                          : "bg-slate-400 text-white"
+                      }
+                    >
+                      {(vehicle as any).isOnMission ? "En ligne" : "Hors ligne"}
                     </Badge>
                   </div>
                   <p className="text-sm text-slate-500">{vehicle.model} • {vehicle.licensePlate}</p>
