@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearch } from "wouter";
 import { useVehicles } from "@/hooks/use-vehicles";
 import { useGpsPositions, useGpsWebSocket } from "@/hooks/use-gps-tracking";
 import { useMissions } from "@/hooks/use-missions";
@@ -8,10 +9,11 @@ import { MapView } from "@/components/map-view";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Car, Navigation, Gauge, Power, RefreshCw, MapPin, Satellite, Wifi, WifiOff } from "lucide-react";
+import { Car, Navigation, Gauge, Power, RefreshCw, MapPin, Satellite, Wifi, WifiOff, ClipboardList } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 export default function LiveMapPage() {
+  const search = useSearch();
   const { data: vehicles } = useVehicles();
   // Open a WebSocket so GPS updates are pushed in real time
   const { status: wsStatus } = useGpsWebSocket();
@@ -20,6 +22,13 @@ export default function LiveMapPage() {
   const { data: missions } = useMissions();
   const { isSuperAdmin } = useUser();
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
+
+  // Auto-select vehicle from URL param (?vehicleId=X)
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    const vid = params.get("vehicleId");
+    if (vid) setSelectedVehicleId(parseInt(vid, 10));
+  }, [search]);
 
   // Set of vehicleIds that have an in-progress mission
   const onMissionVehicleIds = new Set(
@@ -48,7 +57,7 @@ export default function LiveMapPage() {
   });
 
   const trackedCount = vehiclesWithGps.filter((v: any) => v.isOnMission).length;
-  const enginesOn = (gpsPositions || []).filter((g: any) => g.engineOn).length;
+  const activeMissions = (missions || []).filter((m: any) => m.status === "in_progress");
 
   return (
     <Layout>
@@ -68,10 +77,6 @@ export default function LiveMapPage() {
             <Badge variant="outline" className="gap-2 py-1.5 px-3">
               <MapPin className="w-4 h-4 text-emerald-500" />
               {trackedCount} véhicule(s) suivi(s)
-            </Badge>
-            <Badge variant="outline" className="gap-2 py-1.5 px-3">
-              <Power className="w-4 h-4 text-blue-500" />
-              {enginesOn} moteur(s) en marche
             </Badge>
             <div className="flex items-center gap-1 text-xs">
               {wsStatus === "connected" ? (
@@ -173,6 +178,41 @@ export default function LiveMapPage() {
               </ScrollArea>
             </CardContent>
           </Card>
+
+          {/* Active missions panel */}
+          {activeMissions.length > 0 && (
+            <Card className="border-0 shadow-lg overflow-hidden shrink-0">
+              <CardHeader className="pb-2 bg-gradient-to-r from-amber-600 to-orange-600 text-white rounded-t-xl">
+                <CardTitle className="text-sm font-display flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4" />
+                  Missions en cours ({activeMissions.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="divide-y divide-slate-100 max-h-48 overflow-y-auto">
+                  {activeMissions.map((mission: any) => {
+                    const vehicle = vehiclesWithGps.find((v: any) => v.id === mission.vehicleId);
+                    return (
+                      <button
+                        key={mission.id}
+                        className="w-full text-left p-3 hover:bg-amber-50 transition-colors"
+                        onClick={() => setSelectedVehicleId(mission.vehicleId)}
+                      >
+                        <p className="font-medium text-sm text-slate-900 truncate">{mission.title}</p>
+                        <div className="flex items-center gap-1 mt-0.5 text-xs text-slate-500">
+                          <MapPin className="w-3 h-3 text-red-400" />
+                          <span className="truncate">{mission.endLocation}</span>
+                        </div>
+                        {vehicle && (
+                          <p className="text-[10px] text-slate-400 mt-0.5">{vehicle.name} · {vehicle.licensePlate}</p>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           </div>
 

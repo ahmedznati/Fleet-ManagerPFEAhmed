@@ -11,13 +11,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ClipboardList, MapPin, Calendar, AlertCircle, CheckCircle2, Clock, XCircle, Play, Users, User, Edit2, Trash2, MoreHorizontal, History, Filter, X, ShieldCheck, ShieldAlert } from "lucide-react";
+import { ClipboardList, MapPin, Calendar, AlertCircle, CheckCircle2, Clock, XCircle, Play, Users, User, Edit2, Trash2, MoreHorizontal, History, Filter, X, ShieldCheck, ShieldAlert, Navigation2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useRef, useState } from "react";
 import { Timer } from "lucide-react";
+import { useLocation } from "wouter";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -92,6 +93,7 @@ export default function MissionsPage() {
   const [dateTo, setDateTo] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [showFilter, setShowFilter] = useState(false);
+  const [, navigate] = useLocation();
 
   // Build lookup maps for names
   const driverMap = new Map(drivers?.map(d => [d.id, `${d.firstName} ${d.lastName}`]) || []);
@@ -425,6 +427,17 @@ export default function MissionsPage() {
                       {vehicleMap.get(mission.vehicleId) || `Véhicule #${mission.vehicleId}`} • {driverMap.get(mission.driverId) || `Chauffeur #${mission.driverId}`}
                     </div>
                     <div className="flex gap-2 items-center">
+                      {mission.status === 'in_progress' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/live-map?vehicleId=${mission.vehicleId}`); }}
+                        >
+                          <Navigation2 className="w-3 h-3 mr-1" />
+                          Voir en direct
+                        </Button>
+                      )}
                       {isChauffeur && mission.status === 'pending' && (
                         <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700"
                           onClick={() => updateStatusMutation.mutate({ id: mission.id, status: 'in_progress' })}>

@@ -1,9 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { MapPin, Navigation } from "lucide-react";
+import { MapPin, Navigation, Search, Loader2 } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -51,6 +51,27 @@ const tunisiaBounds: L.LatLngBoundsExpression = [
   [30.2, 7.5], // Southwest
   [37.5, 11.6], // Northeast
 ];
+
+// Detect Google Maps Plus Code format (e.g. "V46W+2W4" or "V46W+2W4, Ariana")
+const PLUS_CODE_REGEX = /^[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}([\s,].+)?$/i;
+const isPlusCode = (s: string) => PLUS_CODE_REGEX.test(s.trim());
+
+// Detect "lat, lng" raw coordinates
+const LATLNG_REGEX = /^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/;
+const isLatLng = (s: string) => LATLNG_REGEX.test(s.trim());
+
+async function geocodeQuery(query: string): Promise<Array<{ lat: number; lng: number; name: string }>> {
+  const encoded = encodeURIComponent(query.trim());
+  const url = `https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=5&accept-language=fr`;
+  const res = await fetch(url, { headers: { "Accept-Language": "fr" } });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.map((item: any) => ({
+    lat: parseFloat(item.lat),
+    lng: parseFloat(item.lon),
+    name: item.display_name?.split(",").slice(0, 2).join(", ") || query,
+  }));
+}
 
 interface LocationPickerProps {
   value: string;
@@ -104,6 +125,9 @@ export function LocationPicker({ value, onChange, placeholder, label }: Location
   const [selectedPosition, setSelectedPosition] = useState<[number, number] | null>(null);
   const [selectedName, setSelectedName] = useState(value || "");
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Array<{ lat: number; lng: number; name: string }>>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setSelectedName(value || "");
@@ -117,6 +141,41 @@ export function LocationPicker({ value, onChange, placeholder, label }: Location
   const handleCitySelect = (city: typeof tunisiaCities[0]) => {
     setSelectedPosition([city.lat, city.lng]);
     setSelectedName(city.name);
+    setSearchResults([]);
+    setSearchQuery("");
+  };
+
+  const handleResultSelect = (result: { lat: number; lng: number; name: string }) => {
+    setSelectedPosition([result.lat, result.lng]);
+    setSelectedName(result.name);
+    setSearchResults([]);
+    setSearchQuery(result.name);
+  };
+
+  // Live geocoding search with debounce
+  const handleSearchChange = (q: string) => {
+    setSearchQuery(q);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    if (!q.trim()) { setSearchResults([]); return; }
+
+    // Handle raw lat,lng input immediately
+    if (isLatLng(q)) {
+      const [lat, lng] = q.split(",").map((s) => parseFloat(s.trim()));
+      setSelectedPosition([lat, lng]);
+      setSelectedName(q.trim());
+      setSearchResults([]);
+      return;
+    }
+
+    searchTimeout.current = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const results = await geocodeQuery(q);
+        setSearchResults(results);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 600);
   };
 
   const handleConfirm = () => {
@@ -124,9 +183,9 @@ export function LocationPicker({ value, onChange, placeholder, label }: Location
     setOpen(false);
   };
 
-  const filteredCities = tunisiaCities.filter(city =>
-    city.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredCities = searchQuery
+    ? tunisiaCities.filter((c) => c.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : tunisiaCities;
 
   return (
     <div className="flex gap-2">
@@ -151,15 +210,49 @@ export function LocationPicker({ value, onChange, placeholder, label }: Location
           </DialogHeader>
           
           <div className="grid grid-cols-3 gap-4">
-            {/* City list */}
+            {/* Search + city list */}
             <div className="col-span-1 space-y-2">
-              <Input
-                placeholder="Rechercher une ville..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="mb-2"
-              />
-              <div className="h-[400px] overflow-y-auto space-y-1 pr-2">
+              {/* Geocoding / Plus Code input */}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder="Adresse, code Plus (V46W+2W4)…"
+                  value={searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  className="pl-8 text-sm"
+                />
+                {isSearching && (
+                  <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 animate-spin text-slate-400" />
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 px-1">
+                Tapez une adresse, un code Plus Google Maps, ou des coordonnées (lat, lng)
+              </p>
+
+              <div className="h-[340px] overflow-y-auto space-y-1 pr-1">
+                {/* Geocoding results */}
+                {searchResults.length > 0 && (
+                  <div className="mb-2">
+                    <p className="text-[10px] font-semibold text-slate-500 px-2 py-1 uppercase tracking-wide">Résultats</p>
+                    {searchResults.map((r, i) => (
+                      <Button
+                        key={i}
+                        type="button"
+                        variant={selectedName === r.name ? "default" : "ghost"}
+                        size="sm"
+                        className="w-full justify-start text-left h-auto py-1.5 text-xs"
+                        onClick={() => handleResultSelect(r)}
+                      >
+                        <MapPin className="h-3 w-3 mr-2 flex-shrink-0 text-red-400" />
+                        <span className="truncate">{r.name}</span>
+                      </Button>
+                    ))}
+                    <div className="border-t my-2" />
+                  </div>
+                )}
+
+                {/* City shortcuts */}
+                <p className="text-[10px] font-semibold text-slate-500 px-2 py-1 uppercase tracking-wide">Villes principales</p>
                 {filteredCities.map((city) => (
                   <Button
                     key={city.name}
@@ -184,7 +277,7 @@ export function LocationPicker({ value, onChange, placeholder, label }: Location
                   zoom={6}
                   style={{ height: "100%", width: "100%" }}
                   maxBounds={tunisiaBounds}
-                  minZoom={6}
+                  minZoom={5}
                 >
                   <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -198,12 +291,16 @@ export function LocationPicker({ value, onChange, placeholder, label }: Location
                 </MapContainer>
               </div>
               
-              {/* Selected location display */}
               <div className="mt-3 p-3 bg-slate-50 rounded-lg">
                 <p className="text-sm text-slate-600">
                   <span className="font-medium">Lieu sélectionné:</span>{" "}
-                  {selectedName || "Cliquez sur la carte ou choisissez une ville"}
+                  {selectedName || "Cliquez sur la carte, choisissez une ville ou tapez une adresse"}
                 </p>
+                {selectedPosition && (
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {selectedPosition[0].toFixed(5)}, {selectedPosition[1].toFixed(5)}
+                  </p>
+                )}
               </div>
             </div>
           </div>
