@@ -83,7 +83,7 @@ function AppRouter() {
         <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} allowedRoles={["superadmin", "operateur"]} />} />
         
         {/* GPS Live Map — operateur + superadmin */}
-        <Route path="/map" component={() => <ProtectedRoute component={LiveMapPage} allowedRoles={["superadmin", "operateur"]} />} />
+        <Route path="/live-map" component={() => <ProtectedRoute component={LiveMapPage} allowedRoles={["superadmin", "operateur"]} />} />
         
         {/* Vehicles — operateur manages, superadmin views */}
         <Route path="/vehicles" component={() => <ProtectedRoute component={VehiclesPage} allowedRoles={["superadmin", "operateur"]} />} />

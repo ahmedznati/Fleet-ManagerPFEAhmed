@@ -163,8 +163,8 @@ function haversineKm(a: [number, number], b: [number, number]): number {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-/** Fetch a road-following route from OSRM (free). Returns array of [lat,lng] or null. */
-async function fetchRoute(from: [number, number], to: [number, number]): Promise<[number, number][] | null> {
+/** Fetch a road-following route from OSRM (free). Returns route points and road distance (km), or null. */
+async function fetchRoute(from: [number, number], to: [number, number]): Promise<{ points: [number, number][]; distanceKm: number } | null> {
   try {
     // OSRM uses lng,lat order
     const url = `https://router.project-osrm.org/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`;
@@ -172,7 +172,9 @@ async function fetchRoute(from: [number, number], to: [number, number]): Promise
     const data = await res.json();
     if (data.code === 'Ok' && data.routes?.[0]?.geometry?.coordinates) {
       // GeoJSON is [lng, lat], convert to [lat, lng]
-      return data.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]] as [number, number]);
+      const points: [number, number][] = data.routes[0].geometry.coordinates.map((c: number[]) => [c[1], c[0]]);
+      const distanceKm = (data.routes[0].distance ?? 0) / 1000;
+      return { points, distanceKm };
     }
   } catch (e) {
     console.error('OSRM routing error:', e);
@@ -239,15 +241,18 @@ export function MissionTracker({ mission, onStart, onComplete, isUpdating }: Mis
   const [accuracy, setAccuracy] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [routePoints, setRoutePoints] = useState<[number, number][] | null>(null);
+  const [routeDistanceKm, setRouteDistanceKm] = useState<number | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const routeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Derived values
   const distanceToDestination = useMemo(() => {
+    // Prefer OSRM road distance; fall back to straight-line haversine
+    if (routeDistanceKm !== null) return routeDistanceKm;
     if (!driverPosition || !endCoords) return null;
     return haversineKm(driverPosition, endCoords);
-  }, [driverPosition, endCoords]);
+  }, [routeDistanceKm, driverPosition, endCoords]);
 
   const distanceTraveled = useMemo(() => {
     if (traveledPath.length < 2) return 0;
@@ -258,10 +263,7 @@ export function MissionTracker({ mission, onStart, onComplete, isUpdating }: Mis
     return total;
   }, [traveledPath]);
 
-  const etaMinutes = useMemo(() => {
-    if (!distanceToDestination || speed < 3) return null;
-    return Math.round((distanceToDestination / speed) * 60);
-  }, [distanceToDestination, speed]);
+  // etaMinutes removed — user requested removal
 
   // Load destination coords
   useEffect(() => {
@@ -303,8 +305,11 @@ export function MissionTracker({ mission, onStart, onComplete, isUpdating }: Mis
     // Debounce route fetching to every 10 seconds
     if (routeTimerRef.current) clearTimeout(routeTimerRef.current);
     routeTimerRef.current = setTimeout(async () => {
-      const route = await fetchRoute(driverPosition, endCoords);
-      if (route) setRoutePoints(route);
+      const result = await fetchRoute(driverPosition, endCoords);
+      if (result) {
+        setRoutePoints(result.points);
+        setRouteDistanceKm(result.distanceKm);
+      }
     }, routePoints ? 10000 : 0); // Fetch immediately first time, then debounce
     return () => { if (routeTimerRef.current) clearTimeout(routeTimerRef.current); };
   }, [driverPosition, endCoords]);
@@ -404,13 +409,6 @@ export function MissionTracker({ mission, onStart, onComplete, isUpdating }: Mis
   }, [isTracking, speed, heading]);
 
   const formatDist = (km: number) => km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
-  const formatEta = (mins: number | null) => {
-    if (mins === null) return "—";
-    if (mins < 60) return `${mins} min`;
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    return `${h}h${m > 0 ? ` ${m}min` : ""}`;
-  };
 
   return (
     <div ref={containerRef} className={isFullscreen ? "fixed inset-0 z-[9999] bg-white flex flex-col" : ""}>
@@ -449,9 +447,9 @@ export function MissionTracker({ mission, onStart, onComplete, isUpdating }: Mis
       </CardHeader>
 
       <CardContent className={`p-0 ${isFullscreen ? "flex-1 flex flex-col" : ""}`}>
-        {/* ── Stats bar (Google Maps-like) ── */}
+        {/* ── Stats bar (2 columns: Distance + Speed) ── */}
         {isTracking && (
-          <div className="grid grid-cols-3 divide-x bg-white border-b">
+          <div className="grid grid-cols-2 divide-x bg-white border-b">
             <div className="p-3 text-center">
               <div className="flex items-center justify-center gap-1 text-blue-600 mb-0.5">
                 <Route className="w-3.5 h-3.5" />
@@ -460,13 +458,6 @@ export function MissionTracker({ mission, onStart, onComplete, isUpdating }: Mis
               <p className="text-lg font-bold text-slate-800">
                 {distanceToDestination !== null ? formatDist(distanceToDestination) : "—"}
               </p>
-            </div>
-            <div className="p-3 text-center">
-              <div className="flex items-center justify-center gap-1 text-blue-600 mb-0.5">
-                <Clock className="w-3.5 h-3.5" />
-                <span className="text-xs font-medium">ETA</span>
-              </div>
-              <p className="text-lg font-bold text-slate-800">{formatEta(etaMinutes)}</p>
             </div>
             <div className="p-3 text-center">
               <div className="flex items-center justify-center gap-1 text-blue-600 mb-0.5">
@@ -624,7 +615,6 @@ export function MissionTracker({ mission, onStart, onComplete, isUpdating }: Mis
           {distanceToDestination !== null && (
             <div className="text-right flex-shrink-0">
               <p className="text-sm font-bold text-blue-600">{formatDist(distanceToDestination)}</p>
-              {etaMinutes !== null && <p className="text-[10px] text-slate-400">{formatEta(etaMinutes)}</p>}
             </div>
           )}
         </div>

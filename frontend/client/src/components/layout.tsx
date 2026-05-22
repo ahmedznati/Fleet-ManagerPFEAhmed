@@ -39,7 +39,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     if (isSuperAdmin) {
       return [
         { href: "/dashboard", label: "Tableau de Bord", icon: LayoutDashboard },
-        { href: "/map", label: "Carte en Direct", icon: Map },
+        { href: "/live-map", label: "Carte en Direct", icon: Map },
         { href: "/vehicles", label: "Flotte", icon: Car },
         { href: "/drivers", label: "Chauffeurs", icon: UserCircle },
         { href: "/users", label: "Gestion Utilisateurs", icon: Users },
@@ -50,7 +50,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     if (isOperateur) {
       return [
         { href: "/dashboard", label: "Tableau de Bord", icon: LayoutDashboard },
-        { href: "/map", label: "Suivi GPS", icon: Map },
+        { href: "/live-map", label: "Suivi GPS", icon: Map },
         { href: "/vehicles", label: "Flotte", icon: Car },
         { href: "/drivers", label: "Chauffeurs", icon: UserCircle },
         { href: "/missions", label: "Missions", icon: ClipboardList },
