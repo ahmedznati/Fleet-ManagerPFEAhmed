@@ -191,11 +191,21 @@ export function MapView({ vehicles = [], selectedVehicleId, height = "500px", hi
         {/* Mission start (A) and destination (B) markers */}
         {missions.map((mission: any) => (
           <span key={`mission-markers-${mission.id}`}>
-            {mission.startLat && mission.startLng && (
+            {/* A: use startLat/startLng if available, else fall back to first history point */}
+            {(mission.startLat && mission.startLng) ? (
               <Marker position={[mission.startLat, mission.startLng]} icon={missionStartIcon}>
                 <Popup>
                   <div className="text-sm space-y-1">
                     <p className="font-semibold text-emerald-700">Départ</p>
+                    <p className="text-slate-600">{mission.title}</p>
+                  </div>
+                </Popup>
+              </Marker>
+            ) : history.length > 0 && (
+              <Marker position={[history[0].lat, history[0].lng]} icon={missionStartIcon}>
+                <Popup>
+                  <div className="text-sm space-y-1">
+                    <p className="font-semibold text-emerald-700">Départ enregistré</p>
                     <p className="text-slate-600">{mission.title}</p>
                   </div>
                 </Popup>
@@ -221,19 +231,21 @@ export function MapView({ vehicles = [], selectedVehicleId, height = "500px", hi
               positions={interpolatePath(history.map(loc => [loc.lat, loc.lng] as [number, number]))}
               pathOptions={{ color: '#3b82f6', weight: 4, opacity: 0.8 }}
             />
-            {/* Actual recorded GPS waypoints */}
+            {/* Intermediate waypoints only (skip first and last — covered by A/B markers) */}
             {history.map((loc, idx) => (
-              <CircleMarker
-                key={idx}
-                center={[loc.lat, loc.lng]}
-                radius={idx === 0 || idx === history.length - 1 ? 6 : 4}
-                pathOptions={{
-                  color: idx === history.length - 1 ? '#1d4ed8' : '#3b82f6',
-                  weight: 2,
-                  fillColor: idx === 0 ? '#22c55e' : idx === history.length - 1 ? '#1d4ed8' : '#93c5fd',
-                  fillOpacity: 1,
-                }}
-              />
+              idx > 0 && idx < history.length - 1 && (
+                <CircleMarker
+                  key={idx}
+                  center={[loc.lat, loc.lng]}
+                  radius={4}
+                  pathOptions={{
+                    color: '#3b82f6',
+                    weight: 2,
+                    fillColor: '#93c5fd',
+                    fillOpacity: 1,
+                  }}
+                />
+              )
             ))}
           </>
         )}
