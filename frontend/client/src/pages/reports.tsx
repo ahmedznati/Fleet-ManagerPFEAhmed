@@ -129,7 +129,6 @@ export default function ReportsPage() {
       ["Total missions", String(fleetStats.totalMissions), `${fleetStats.completedMissions} terminees`],
       ["En cours", String(fleetStats.inProgressMissions), `${fleetStats.cancelledMissions} annulees`],
       ["Taux de reussite", `${successRate}%`, "missions completes"],
-      ["Distance totale", `${fleetStats.totalKm.toFixed(1)} km`, "toutes missions"],
     ];
 
     const boxW = (pageW - 28 - (kpis.length - 1) * 2) / kpis.length;
@@ -162,7 +161,7 @@ export default function ReportsPage() {
 
     autoTable(doc, {
       startY: y,
-      head: [["Vehicule", "Immatriculation", "Statut", "Missions", "Terminees", "Annulees", "En cours", "Distance (km)", "Duree totale"]],
+      head: [["Vehicule", "Immatriculation", "Statut", "Missions", "Terminees", "Annulees", "En cours", "Duree totale"]],
       body: vehicleStats.map(v => [
         v.name,
         v.licensePlate,
@@ -171,7 +170,6 @@ export default function ReportsPage() {
         String(v.completedMissions),
         String(v.cancelledMissions),
         String(v.inProgressMissions),
-        v.totalKm.toFixed(1),
         v.totalMs > 0 ? fmtDuration(v.totalMs) : "N/A",
       ]),
       styles: { fontSize: 8, cellPadding: 2.5 },
@@ -183,7 +181,6 @@ export default function ReportsPage() {
         4: { halign: "center" },
         5: { halign: "center" },
         6: { halign: "center" },
-        7: { halign: "center" },
       },
     });
 
@@ -218,7 +215,6 @@ export default function ReportsPage() {
         };
         const durationMs = m.actualStart && m.actualEnd
           ? new Date(m.actualEnd).getTime() - new Date(m.actualStart).getTime() : null;
-        const km = missionKm(m);
         return [
           toAscii(m.title || ""),
           toAscii(veh?.name || `#${m.vehicleId}`),
@@ -228,7 +224,6 @@ export default function ReportsPage() {
           m.actualStart ? format(new Date(m.actualStart), "dd/MM/yy HH:mm") : "N/A",
           m.actualEnd ? format(new Date(m.actualEnd), "dd/MM/yy HH:mm") : "N/A",
           durationMs ? fmtDuration(durationMs) : "N/A",
-          km.toFixed(1),
           toAscii(m.endLocation || "N/A"),
           toAscii(m.priority ? m.priority.charAt(0).toUpperCase() + m.priority.slice(1) : "Normal"),
         ];
@@ -236,16 +231,15 @@ export default function ReportsPage() {
 
     autoTable(doc, {
       startY: y,
-      head: [["Mission", "Vehicule", "Chauffeur", "Statut", "Planifie", "Debut reel", "Fin reelle", "Duree", "Km", "Destination", "Priorite"]],
+      head: [["Mission", "Vehicule", "Chauffeur", "Statut", "Planifie", "Debut reel", "Fin reelle", "Duree", "Destination", "Priorite"]],
       body: missionRows,
       styles: { fontSize: 7.5, cellPadding: 2 },
       headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: "bold", fontSize: 7.5 },
       alternateRowStyles: { fillColor: [248, 250, 252] },
       columnStyles: {
-        0: { fontStyle: "bold", cellWidth: 28 },
+        0: { fontStyle: "bold", cellWidth: 30 },
         3: { halign: "center" },
-        8: { halign: "center" },
-        10: { halign: "center" },
+        9: { halign: "center" },
       },
       didParseCell: (data) => {
         if (data.section === "body" && data.column.index === 3) {
@@ -255,7 +249,7 @@ export default function ReportsPage() {
           else if (t === "Annulee") data.cell.styles.textColor = [220, 38, 38];
           else data.cell.styles.textColor = [180, 140, 0];
         }
-        if (data.section === "body" && data.column.index === 10) {
+        if (data.section === "body" && data.column.index === 9) {
           if (data.cell.text[0] === "Urgent") data.cell.styles.textColor = [220, 38, 38];
           else if (data.cell.text[0] === "High") data.cell.styles.textColor = [234, 88, 12];
         }
@@ -288,14 +282,13 @@ export default function ReportsPage() {
           String(dMissions.length),
           String(dCompleted.length),
           dMissions.length > 0 ? `${Math.round((dCompleted.length / dMissions.length) * 100)}%` : "N/A",
-          dKm.toFixed(1),
           dMs > 0 ? fmtDuration(dMs) : "N/A",
         ];
       });
 
       autoTable(doc, {
         startY: dY,
-        head: [["Chauffeur", "Matricule", "Permis", "Missions", "Terminees", "Taux", "Km total", "Temps total"]],
+        head: [["Chauffeur", "Matricule", "Permis", "Missions", "Terminees", "Taux", "Temps total"]],
         body: driverRows,
         styles: { fontSize: 8, cellPadding: 2.5 },
         headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold", fontSize: 8 },
